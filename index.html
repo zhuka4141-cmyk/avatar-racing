@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>头像赛车</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  color:#1d2430;background:#eef1f4;-webkit-text-size-adjust:100%;overflow:hidden
+}
+[hidden]{display:none!important}
+h1,h2,p{margin:0}
+button{font:inherit}
+#setupView{position:absolute;inset:0;overflow:auto;-webkit-overflow-scrolling:touch}
+.wrap{max-width:720px;margin:0 auto;padding:22px 16px 150px}
+.head h1{font-size:24px;letter-spacing:.5px}
+.head .sub{margin-top:8px;color:#68727f;font-size:13px;line-height:1.65}
+.list{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+.card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e7ee;border-radius:14px;padding:10px 12px;box-shadow:0 1px 2px rgba(20,30,50,.04)}
+.avatar{width:52px;height:52px;flex:0 0 52px;border-radius:50%;overflow:hidden;background:#f1f4f8;border:1px solid #dbe1e9}
+.avatar img{width:100%;height:100%;display:block;object-fit:cover}
+.card-mid{flex:1 1 auto;min-width:0}
+.name-input{width:100%;height:38px;border:1px solid #dbe1e9;border-radius:9px;padding:0 10px;font-size:15px;background:#fbfcfe;color:#1d2430}
+.name-input:focus{outline:2px solid #bcd0fb;border-color:#7fa8f8}
+.card-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid #d5dbe4;background:#fff;color:#28313d;border-radius:10px;height:40px;padding:0 14px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.btn:active{transform:translateY(1px)}
+.btn.small{height:34px;padding:0 10px;font-size:13px;border-radius:8px}
+.btn.primary{background:#2f6df6;border-color:#2f6df6;color:#fff}
+.btn.ghost{background:#f7f9fc}
+.btn.danger{color:#c93b3b;border-color:#f0cdcd;background:#fff6f6}
+.empty{margin-top:18px;padding:22px;text-align:center;color:#68727f;font-size:13px;background:#fff;border:1px dashed #d8dee6;border-radius:14px}
+.actions{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:rgba(255,255,255,.95);border-top:1px solid #e2e7ee;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;backdrop-filter:blur(6px);z-index:20}
+.actions .btn{flex:1 1 auto;min-width:104px;height:46px}
+.actions .btn.primary{flex:2 1 160px}
+.race{position:fixed;inset:0;background:#e9edf1}
+#game{display:block;width:100%;height:100%;touch-action:none}
+.hud{position:absolute;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;display:flex;align-items:flex-start;gap:10px;pointer-events:none}
+.hud-panel{background:rgba(255,255,255,.9);border:1px solid rgba(210,218,228,.95);border-radius:12px;padding:8px 12px;box-shadow:0 2px 10px rgba(20,30,50,.09);min-width:0;max-width:min(58vw,320px)}
+.hud-status{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-sub{margin-top:3px;font-size:12px;color:#68727f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-btn{pointer-events:auto;margin-left:auto;height:42px;border-radius:10px;border:1px solid #d5dbe4;background:rgba(255,255,255,.94);padding:0 14px;font-size:13px;cursor:pointer}
+.countdown{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.countdown i{font-style:normal;font-size:min(30vmin,220px);font-weight:800;color:#fff;letter-spacing:3px;text-shadow:0 8px 34px rgba(18,26,40,.5),0 2px 6px rgba(18,26,40,.45)}
+.hint{position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:#5a6472;background:rgba(255,255,255,.88);border-radius:10px;padding:8px;border:1px solid #e2e7ee}
+.result{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(18,24,34,.28)}
+.result-card{width:100%;max-width:430px;max-height:calc(100% - 24px);overflow:auto;background:#fff;border-radius:18px;padding:18px 16px;box-shadow:0 20px 50px rgba(10,16,26,.35)}
+.result-card h2{font-size:20px;text-align:center}
+.result-note{margin-top:6px;text-align:center;font-size:12px;color:#68727f}
+.board{margin-top:14px;display:flex;flex-direction:column;gap:8px;max-height:min(50vh,400px);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px}
+.board-sep{margin:6px 0 2px;font-size:12px;color:#68727f;text-align:center}
+.row.minor{background:#fbfcfe}
+.row.minor .rank{background:#dde3ec;color:#4b5666;font-weight:600}
+.row{display:flex;align-items:center;gap:10px;padding:8px;border-radius:12px;background:#f7f9fc;border:1px solid #e8edf4}
+.row .rank{width:26px;height:26px;flex:0 0 26px;border-radius:50%;background:#2f6df6;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.row.top1 .rank{background:#e0a92a}
+.row.top2 .rank{background:#98a4b3}
+.row.top3 .rank{background:#c9834d}
+.row img{width:34px;height:34px;border-radius:50%;flex:0 0 34px;background:#eef1f5;border:1px solid #dfe5ee}
+.row .nm{flex:1 1 auto;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .st{font-size:12px;color:#68727f;white-space:nowrap}
+.result-actions{margin-top:16px;display:flex;gap:10px}
+.result-actions .btn{flex:1 1 auto;height:46px}
+.toast{position:fixed;left:50%;bottom:clamp(96px,20vh,180px);transform:translateX(-50%);background:rgba(24,32,44,.93);color:#fff;font-size:13px;line-height:1.5;padding:10px 16px;border-radius:10px;max-width:86vw;z-index:60;box-shadow:0 8px 24px rgba(10,16,26,.3)}
+</style>
+</head>
+<body>
+
+<section id="setupView">
+  <div class="wrap">
+    <div class="head">
+      <h1>头像赛车</h1>
+      <p class="sub">填写姓名并上传头像，点击“开始比赛”即可观看全自动头像赛车。至少需要 2 位参赛者；头像只在当前页面会话中使用，不会上传到任何服务器。</p>
+    </div>
+    <div id="list" class="list"></div>
+    <div id="empty" class="empty">还没有参赛者，点击下方“添加参赛者”或“填入示例参赛者”开始。</div>
+  </div>
+  <div class="actions">
+    <button id="addBtn" class="btn" type="button">添加参赛者</button>
+    <button id="sampleBtn" class="btn ghost" type="button">填入示例参赛者</button>
+    <button id="clearBtn" class="btn danger" type="button">清空全部</button>
+    <button id="startBtn" class="btn primary" type="button">开始比赛</button>
+  </div>
+</section>
+
+<section id="raceView" class="race" hidden>
+  <canvas id="game"></canvas>
+  <div class="hud">
+    <div class="hud-panel">
+      <div id="hudStatus" class="hud-status">准备中</div>
+      <div id="hudSub" class="hud-sub"></div>
+    </div>
+    <button id="rankBtn" class="hud-btn" type="button" hidden>查看成绩</button>
+    <button id="backBtn" class="hud-btn" type="button">返回设置</button>
+  </div>
+  <div id="countdown" class="countdown" hidden><i id="countdownText">3</i></div>
+  <div id="hint" class="hint" hidden></div>
+  <div id="result" class="result" hidden>
+    <div class="result-card">
+      <h2>比赛结束</h2>
+      <div id="resultNote" class="result-note"></div>
+      <div id="board" class="board"></div>
+      <div class="result-actions">
+        <button id="againBtn" class="btn primary" type="button">再来一局</button>
+        <button id="toSetupBtn" class="btn ghost" type="button">返回设置</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(function(){
+'use strict';
+
+var TAU = Math.PI * 2;
+var HALF_W = 150;
+var RACE_DIST = 9000;
+var FWD_RUNOFF = 1400;
+var LANE_MAX = HALF_W - 24;
+var VIEW_H = 820;
+var MIN_VIEW_W = 520;
+var PALETTE = ['#f2994a','#eb5757','#2d9cdb','#27ae60','#9b51e0','#f2c94c','#56ccf2','#bb6bd9','#f2789f','#4ecdc4'];
+
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function damp(cur,target,lambda,dt){ return lerp(cur,target,1-Math.exp(-lambda*dt)); }
+function dampAngle(cur,target,lambda,dt){
+  var d = ((target-cur+Math.PI)%TAU+TAU)%TAU - Math.PI;
+  return cur + d*(1-Math.exp(-lambda*dt));
+}
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s){
+  var h = 2166136261;
+  for (var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h,16777619); }
+  return h >>> 0;
+}
+function rrect(g,x,y,w,h,r){
+  r = Math.min(r, Math.abs(w)/2, Math.abs(h)/2);
+  g.beginPath();
+  g.moveTo(x+r,y);
+  g.lineTo(x+w-r,y); g.arcTo(x+w,y,x+w,y+r,r);
+  g.lineTo(x+w,y+h-r); g.arcTo(x+w,y+h,x+w-r,y+h,r);
+  g.lineTo(x+r,y+h); g.arcTo(x,y+h,x,y+h-r,r);
+  g.lineTo(x,y+r); g.arcTo(x,y,x+r,y,r);
+  g.closePath();
+}
+function fmtTime(v){ return (Math.round(v*10)/10).toFixed(1) + 's'; }
+function dist(a,b){ var dx=b.x-a.x, dy=b.y-a.y; return Math.sqrt(dx*dx+dy*dy); }
+
+var setupView = document.getElementById('setupView');
+var raceView = document.getElementById('raceView');
+var listEl = document.getElementById('list');
+var emptyEl = document.getElementById('empty');
+var canvas = document.getElementById('game');
+var ctx = canvas.getContext('2d');
+ctx.imageSmoothingQuality = 'high';
+var hudStatus = document.getElementById('hudStatus');
+var hudSub = document.getElementById('hudSub');
+var countdownEl = document.getElementById('countdown');
+var countdownText = document.getElementById('countdownText');
+var hintEl = document.getElementById('hint');
+var resultEl = document.getElementById('result');
+var resultNote = document.getElementById('resultNote');
+var boardEl = document.getElementById('board');
+var toastEl = document.getElementById('toast');
+var rankBtnEl = document.getElementById('rankBtn');
+
+var viewW = 1, viewH = 1, dpr = 1;
+var camMat = { a:1,b:0,c:0,d:-1,e:0,f:0,scale:1 };
+var lowQuality = false;
+var fpsAcc = 0, fpsFrames = 0;
+var toastTimer = 0;
+
+/* ------------------------------------------------------------------ *
+ * 参赛者与头像
+ * ------------------------------------------------------------------ */
+
+var participants = [];
+var nextId = 1;
+
+function displayName(p){
+  var n = (p.name||'').trim();
+  if (n) return n;
+  var i = participants.indexOf(p);
+  return '赛车手 ' + (i >= 0 ? i+1 : 1);
+}
+function initialOf(name){
+  var s = (name||'').trim();
+  if (!s) return '?';
+  return s.charAt(0).toUpperCase();
+}
+function makeDefaultAvatar(name){
+  var size = 192;
+  var c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  var g = c.getContext('2d');
+  var col = PALETTE[hashStr(name || 'racer') % PALETTE.length];
+  g.fillStyle = col;
+  g.beginPath(); g.arc(size/2,size/2,size/2,0,TAU); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.92)';
+  g.font = 'bold ' + Math.round(size*0.46) + 'px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(initialOf(name), size/2, size/2 + size*0.03);
+  g.beginPath(); g.arc(size/2, size/2, size/2 - 4, 0, TAU);
+  g.lineWidth = 6; g.strokeStyle = 'rgba(20,22,26,0.9)'; g.stroke();
+  return c;
+}
+function setDefaultAvatar(p){
+  var c = makeDefaultAvatar(displayName(p));
+  p.avatarDisc = c;                      // 预乘好的圆形贴图：每帧只需一次 drawImage
+  p.avatarDataUrl = c.toDataURL('image/png');
+}
+function syncCard(p){
+  var n = p.node; if (!n) return;
+  if (n.img.getAttribute('src') !== p.avatarDataUrl) n.img.setAttribute('src', p.avatarDataUrl);
+  n.tag.textContent = (p.avatarSource === 'upload') ? '自定义头像' : '默认头像';
+}
+function buildCard(p){
+  var card = document.createElement('div');
+  card.className = 'card';
+  var av = document.createElement('div'); av.className = 'avatar';
+  var img = document.createElement('img'); img.alt = ''; av.appendChild(img);
+  var mid = document.createElement('div'); mid.className = 'card-mid';
+  var inp = document.createElement('input');
+  inp.className = 'name-input'; inp.type = 'text'; inp.maxLength = 16;
+  inp.placeholder = '参赛者姓名'; inp.value = p.name || '';
+  inp.addEventListener('input', function(){
+    p.name = inp.value;
+    if (p.avatarSource !== 'upload') setDefaultAvatar(p);
+    syncCard(p);
+  });
+  var row = document.createElement('div'); row.className = 'card-row';
+  var upLabel = document.createElement('label');
+  upLabel.className = 'btn small'; upLabel.textContent = '上传头像';
+  var file = document.createElement('input');
+  file.type = 'file'; file.accept = 'image/*'; file.style.display = 'none';
+  file.addEventListener('change', function(){
+    var f = file.files && file.files[0];
+    file.value = '';
+    if (f) applyUpload(p, f);
+  });
+  upLabel.appendChild(file);
+  var resetBtn = document.createElement('button');
+  resetBtn.type = 'button'; resetBtn.className = 'btn small ghost'; resetBtn.textContent = '用默认头像';
+  resetBtn.addEventListener('click', function(){
+    p.avatarSource = null; setDefaultAvatar(p); syncCard(p);
+    toast('已恢复默认头像：' + displayName(p));
+  });
+  row.appendChild(upLabel); row.appendChild(resetBtn);
+  var tag = document.createElement('span');
+  tag.className = 'st'; tag.style.fontSize = '12px'; tag.style.color = '#68727f'; tag.style.alignSelf = 'center';
+  row.appendChild(tag);
+  mid.appendChild(inp); mid.appendChild(row);
+  var del = document.createElement('button');
+  del.type = 'button'; del.className = 'btn small danger'; del.textContent = '删除';
+  del.addEventListener('click', function(){ removeParticipant(p); });
+  card.appendChild(av); card.appendChild(mid); card.appendChild(del);
+  p.node = { card: card, img: img, inp: inp, tag: tag };
+  syncCard(p);
+  return card;
+}
+function renderList(){
+  listEl.innerHTML = '';
+  for (var i=0;i<participants.length;i++){
+    listEl.appendChild(participants[i].node ? participants[i].node.card : buildCard(participants[i]));
+  }
+  emptyEl.hidden = participants.length > 0;
+}
+function addParticipant(name){
+  var p = { id: nextId++, name: name || '', avatarSource: null, avatar: null, avatarDataUrl: '' };
+  participants.push(p);
+  setDefaultAvatar(p);
+  var card = buildCard(p);
+  listEl.appendChild(card);
+  emptyEl.hidden = true;
+  updateHint();
+  return p;
+}
+function removeParticipant(p){
+  var i = participants.indexOf(p);
+  if (i < 0) return;
+  participants.splice(i,1);
+  if (p.node && p.node.card.parentNode) p.node.card.parentNode.removeChild(p.node.card);
+  emptyEl.hidden = participants.length > 0;
+  updateHint();
+}
+function clearAll(){
+  participants.length = 0;
+  listEl.innerHTML = '';
+  emptyEl.hidden = false;
+  updateHint();
+  toast('已清空全部参赛者');
+}
+function applyDefaultNames(){
+  for (var i=0;i<participants.length;i++){
+    var p = participants[i];
+    if (!(p.name||'').trim()){
+      p.name = '赛车手 ' + (i+1);
+      if (p.node && p.node.inp) p.node.inp.value = p.name;
+      if (p.avatarSource !== 'upload') setDefaultAvatar(p);
+      syncCard(p);
+    }
+  }
+}
+
+function loadImageFallback(file){
+  return new Promise(function(res, rej){
+    var url = URL.createObjectURL(file);
+    var im = new Image();
+    im.onload = function(){ res(im); };
+    im.onerror = function(){ URL.revokeObjectURL(url); rej(new Error('decode-failed')); };
+    im.src = url;
+  });
+}
+function loadBitmap(file){
+  return new Promise(function(res, rej){
+    if (typeof createImageBitmap === 'function'){
+      var done = false;
+      createImageBitmap(file).then(function(b){ if(!done){ done = true; res(b); } }, function(){
+        loadImageFallback(file).then(function(im){ if(!done){ done = true; res(im); } }, rej);
+      });
+    } else {
+      loadImageFallback(file).then(res, rej);
+    }
+  });
+}
+function applyUpload(p, file){
+  if (!/^image\//i.test(file.type || '')){
+    toast('请选择常见图片文件（JPG / PNG / WebP / GIF 等）');
+    return;
+  }
+  if (file.size > 15 * 1024 * 1024){
+    toast('图片超过 15MB，无法处理，已使用默认头像');
+    p.avatarSource = null; setDefaultAvatar(p); syncCard(p);
+    return;
+  }
+  loadBitmap(file).then(function(src){
+    try {
+      var size = 192;
+      var c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      var g = c.getContext('2d');
+      var w = src.width || src.naturalWidth || size;
+      var h = src.height || src.naturalHeight || size;
+      var m = Math.min(w,h);
+      if (!(m > 0)) throw new Error('bad-size');
+      g.fillStyle = '#ffffff'; g.fillRect(0,0,size,size);
+      g.drawImage(src, (w-m)/2, (h-m)/2, m, m, 0, 0, size, size);
+      var disc = document.createElement('canvas');
+      disc.width = disc.height = size;
+      var dg = disc.getContext('2d');
+      dg.save();
+      dg.beginPath(); dg.arc(size/2, size/2, size/2 - 1, 0, TAU); dg.clip();
+      dg.drawImage(c, 0, 0);
+      dg.restore();
+      dg.beginPath(); dg.arc(size/2, size/2, size/2 - 4, 0, TAU);
+      dg.lineWidth = 6; dg.strokeStyle = 'rgba(20,22,26,0.9)'; dg.stroke();
+      p.avatarDisc = disc;
+      p.avatarDataUrl = c.toDataURL('image/png');
+      p.avatarSource = 'upload';
+      syncCard(p);
+      toast('已设置头像：' + displayName(p));
+      if (src.close) src.close();
+    } catch (err){
+      p.avatarSource = null; setDefaultAvatar(p); syncCard(p);
+      toast('无法读取该图片，已回退为默认头像');
+    }
+  }, function(){
+    p.avatarSource = null; setDefaultAvatar(p); syncCard(p);
+    toast('无法读取该图片，已回退为默认头像');
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * 赛道生成（seeded PRNG + 平滑曲线 + 曲率/自相交校验）
+ * ------------------------------------------------------------------ */
+
+function gridPlan(n){
+  var cols = Math.max(1, Math.min(Math.max(1,n), Math.floor((2*LANE_MAX) / 50) + 1));
+  var rows = Math.max(1, Math.ceil(Math.max(1,n) / cols));
+  var spacing = rows > 1 ? clamp(1100 / (rows - 1), 32, 80) : 80;
+  return { cols: cols, rows: rows, spacing: spacing, depth: 70 + (rows - 1) * spacing + 140 };
+}
+function buildTrack(seed, backRunoff){
+  var L = RACE_DIST;
+  var step = 6;                 // 中心线采样步长（世界单位）
+  for (var attempt=0; attempt<4; attempt++){
+    var rnd = mulberry32((seed + attempt*7919) >>> 0);
+    var st = { x: 0, y: 0, theta: 0, pts: [] };
+    // 以曲率函数 kf 前进 len：κ 积分得航向，再积分得位置
+    var advance = function(kf, len){
+      var n = Math.max(1, Math.round(len/step));
+      var dl = len/n;
+      for (var i=0;i<n;i++){
+        st.pts.push({ x: st.x, y: st.y });
+        st.theta += kf(i*dl, len) * dl;
+        st.x += Math.cos(st.theta)*dl;
+        st.y += Math.sin(st.theta)*dl;
+      }
+    };
+    // 直道缓弯：直接给定相对基准航向的偏移（横向摆动量被硬性限制在 ±E 内，
+    // 不会像曲率积分那样累积漂移，因此各层直道间距始终安全）
+    var advanceHead = function(headFn, len, base){
+      var n = Math.max(1, Math.round(len/step));
+      var dl = len/n;
+      for (var i=0;i<n;i++){
+        st.pts.push({ x: st.x, y: st.y });
+        var th = base + headFn(i*dl, len);
+        st.x += Math.cos(th)*dl;
+        st.y += Math.sin(th)*dl;
+      }
+      st.theta = base;
+    };
+    st.pts.push({ x: st.x, y: st.y });
+    var total = 0, guard = 0, turnCount = 0, isFirst = true;
+    // 阶梯布局：直道（带一个完整正弦周期的缓弯，净转角 0）→ 半圆 U 型弯 → 直道 → ...
+    // 每段直道都比上一段高出一个 pitch，pitch 远大于赛道宽度，因此各段永不重叠。
+    while (total < L - 260 && guard++ < 40){
+      var legLen = Math.min(L - total, isFirst ? 1000 : (1250 + rnd()*900));
+      var swing = isFirst ? 0 : (55 + rnd()*70);   // 缓弯最大横向摆动（世界单位）
+      var ph = rnd()*TAU;
+      var base = st.theta;
+      (function(sw, p2, bs){
+        advanceHead(function(sl, len){
+          var u = sl/len;
+          var s2 = Math.sin(Math.PI*u), c2 = Math.cos(Math.PI*u);
+          var env = s2*s2;                        // 两端为 0，保证进出直道时航向与基准一致
+          var dEnv = 2*Math.PI*s2*c2;
+          var sn = Math.sin(TAU*u + p2), cs = Math.cos(TAU*u + p2);
+          return Math.atan((sw/len) * (dEnv*sn + env*TAU*cs));
+        }, legLen, bs);
+      })(swing, ph, base);
+      total += legLen;
+      isFirst = false;
+      var pitch = 780 + rnd()*240;      // 相邻直道的间距
+      var Rh = pitch/2;                 // U 型弯半径 = 间距的一半
+      var turnLen = Math.PI*Rh;
+      if (total + turnLen + 700 > L) break;   // 末尾留直道做终点线
+      // 转向符号必须交替：每过一个 U 型弯，航向翻转 180° 且整体前进一个 pitch，
+      // 这样奇数段/偶数段分别落在不同高度的水平线上，永不自交。
+      var sigma = (turnCount % 2 === 0) ? 1 : -1;
+      (function(r2, sg){ advance(function(){ return sg/r2; }, Math.PI*r2); })(Rh, sigma);
+      total += turnLen;
+      turnCount++;
+    }
+    if (total < L){                     // 收尾直道
+      var tail = L - total;
+      advance(function(){ return 0; }, tail);
+      total += tail;
+    }
+    var base = st.pts;
+    var N = base.length;
+    var minR = Infinity;
+    for (var j2=1;j2<N-1;j2++){
+      var a = base[j2-1], b = base[j2], c = base[j2+1];
+      var v1x = b.x-a.x, v1y = b.y-a.y, v2x = c.x-b.x, v2y = c.y-b.y;
+      var l1 = Math.sqrt(v1x*v1x+v1y*v1y), l2 = Math.sqrt(v2x*v2x+v2y*v2y);
+      var turn = Math.abs(Math.atan2(v1x*v2y-v1y*v2x, v1x*v2x+v1y*v2y));
+      var R = turn > 1e-9 ? ((l1+l2)/2)/turn : Infinity;
+      if (R < minR) minR = R;
+    }
+    var clash = false;
+    var need = 2*HALF_W + 30;
+    for (var p2=0; p2<N && !clash; p2+=3){
+      for (var q2=p2+200; q2<N; q2+=3){
+        var ddx = base[p2].x - base[q2].x, ddy = base[p2].y - base[q2].y;
+        if (ddx*ddx + ddy*ddy < need*need){ clash = true; break; }
+      }
+    }
+    if (minR > HALF_W*1.7 && !clash) return finishTrack(base, backRunoff, seed, minR, turnCount);
+  }
+  var straight = [];
+  for (var q3=0;q3<Math.round(L/step)+1;q3++) straight.push({ x:0, y: q3*step });
+  return finishTrack(straight, backRunoff, seed, Infinity, 0);
+}
+function finishTrack(base, backRunoff, seed, minR, turns){
+  var BACK_RUNOFF = Math.max(600, backRunoff || 600);
+  var N = base.length;
+  var line = [];
+  var p0 = base[0], p1 = base[Math.min(6,N-1)];
+  var t0x = p1.x-p0.x, t0y = p1.y-p0.y;
+  var t0l = Math.max(1e-6, Math.sqrt(t0x*t0x+t0y*t0y));
+  t0x /= t0l; t0y /= t0l;
+  var back = [];
+  for (var d=BACK_RUNOFF; d>0; d-=10) back.push({ x: p0.x - t0x*d, y: p0.y - t0y*d });
+  line = back.concat(base);
+  var startIdx = back.length;
+  var pe = base[N-1], pe0 = base[N-3];
+  var tex = pe.x-pe0.x, tey = pe.y-pe0.y;
+  var tel = Math.max(1e-6, Math.sqrt(tex*tex+tey*tey));
+  tex /= tel; tey /= tel;
+  for (var d2=10; d2<=FWD_RUNOFF; d2+=10) line.push({ x: pe.x + tex*d2, y: pe.y + tey*d2 });
+
+  var cum = new Array(line.length);
+  cum[startIdx] = 0;
+  for (var m=startIdx+1;m<line.length;m++) cum[m] = cum[m-1] + dist(line[m-1], line[m]);
+  for (var n2=startIdx-1;n2>=0;n2--) cum[n2] = cum[n2+1] - dist(line[n2], line[n2+1]);
+
+  var out = [];
+  var prevAng = null;
+  for (var t2=0;t2<line.length;t2++){
+    var aa = line[Math.max(0,t2-1)], bb = line[Math.min(line.length-1,t2+1)];
+    var ang = Math.atan2(bb.y-aa.y, bb.x-aa.x);
+    if (prevAng !== null){
+      while (ang - prevAng > Math.PI) ang -= TAU;
+      while (ang - prevAng < -Math.PI) ang += TAU;
+    }
+    prevAng = ang;
+    out.push({ x: line[t2].x, y: line[t2].y, s: cum[t2], ang: ang, nx: -Math.sin(ang), ny: Math.cos(ang) });
+  }
+  return { pts: out, raceLen: cum[startIdx+N-1], seed: seed, minR: minR, turns: turns };
+}
+
+function sampleAt(track, s){
+  var P = track.pts;
+  if (!P || !P.length) return { x:0,y:0,ang:-Math.PI/2,s:0,nx:0,ny:0 };
+  var firstP = P[0];
+  if (s <= firstP.s){
+    var d0 = firstP.s - s;
+    return { x: firstP.x - Math.cos(firstP.ang)*d0, y: firstP.y - Math.sin(firstP.ang)*d0, ang: firstP.ang, s: s, nx: firstP.nx, ny: firstP.ny };
+  }
+  var last = P[P.length-1];
+  if (s >= last.s){
+    var d1 = s - last.s;
+    return { x: last.x + Math.cos(last.ang)*d1, y: last.y + Math.sin(last.ang)*d1, ang: last.ang, s: s, nx: last.nx, ny: last.ny };
+  }
+  var lo = 0, hi = P.length-1;
+  while (hi - lo > 1){
+    var mid = (lo+hi) >> 1;
+    if (P[mid].s <= s) lo = mid; else hi = mid;
+  }
+  var a = P[lo], b = P[hi];
+  var t = (s - a.s) / Math.max(1e-6, b.s - a.s);
+  return { x: a.x+(b.x-a.x)*t, y: a.y+(b.y-a.y)*t, ang: a.ang+(b.ang-a.ang)*t, s: s, nx: a.nx, ny: a.ny };
+}
+function indexAtS(track, s){
+  var P = track.pts;
+  if (s <= P[0].s) return 0;
+  if (s >= P[P.length-1].s) return P.length-1;
+  var lo = 0, hi = P.length-1;
+  while (hi - lo > 1){
+    var mid = (lo+hi) >> 1;
+    if (P[mid].s <= s) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
+/* ------------------------------------------------------------------ *
+ * 比赛状态机
+ * ------------------------------------------------------------------ */
+
+var race = {
+  phase: 'setup', seed: 1, track: null,
+  elapsed: 0, countdown: 0, waitingElapsed: 0, endingElapsed: 0, leaderFinishAt: 0,
+  cars: [], ranked: [], results: [], focusY: 0.62, lowQ: false,
+  cam: { s:0, x:0, y:0, ang:-Math.PI/2 }
+};
+
+function rankCars(cars){
+  return cars.slice().sort(function(a,b){
+    if (a.finished && b.finished) return a.finishTime - b.finishTime;
+    if (a.finished) return -1;
+    if (b.finished) return 1;
+    if (b.s !== a.s) return b.s - a.s;
+    return a.p.id - b.p.id;
+  });
+}
+function createCars(track, rnd){
+  var baseSpeed = track.raceLen / 19.6;
+  var cars = participants.map(function(p){
+    return {
+      p: p, s: 0, v: 0, lateral: 0, yaw: 0, progress: 0,
+      finished: false, finishTime: 0, broken: false,
+      baseSpeed: baseSpeed * (1 + (rnd()*2-1) * 0.05),
+      accel: 2.2 * (1 + (rnd()*2-1) * 0.12),
+      startDelay: rnd() * 0.35,
+      wobbleSeed: rnd() * TAU,
+      paceSeed: rnd() * TAU,
+      paceSeed2: rnd() * TAU,
+      paceSeed3: rnd() * TAU,
+      draft: 0, blocked: 0, follow: 1, gone: false, clear: true,
+      lane: 0, baseLane: 0
+    };
+  });
+  var n = cars.length;
+  var gridSpan = 2*(HALF_W - 20);
+  var lanes = Math.max(1, Math.floor((2*(LANE_MAX - 4)) / 52) + 1);
+  for (var i=0;i<n;i++){
+    var u = n > 1 ? (i/(n-1) - 0.5) : 0;
+    cars[i].lateral = u * gridSpan;    // 起步：全部挤在同一排，重叠也无所谓
+    cars[i].s = -70;
+    cars[i].lane = lanes > 1 ? (-(LANE_MAX - 4) + (i % lanes) * (2*(LANE_MAX - 4))/(lanes-1)) : 0;
+    cars[i].baseLane = cars[i].lane;
+  }
+  return cars;
+}
+function updateCar(c, dt, t, raceLen){
+  if (c.gone) return;
+  var targetV = 0;
+  if (c.finished){
+    targetV = c.baseSpeed * 0.55;          // 冲线后减速巡航，一路驶出画面
+  } else if (t >= c.startDelay){
+    var pace = 1 + 0.085*Math.sin(t*0.37 + c.paceSeed)
+                 + 0.05*Math.sin(t*0.93 + c.paceSeed2)
+                 + 0.035*Math.sin(t*0.21 + c.paceSeed3);
+    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked);
+  }
+  if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel*dt));
+  else c.v = 0;
+  c.s += c.v * dt;
+  if (!c.finished && c.s >= raceLen){ c.finished = true; c.finishTime = t; }
+  if (c.s > raceLen + 2800) c.gone = true;
+  c.lane = damp(c.lane, c.baseLane, 0.18, dt);
+  var wob = 7 * Math.sin(t*0.62 + c.wobbleSeed*2.1);
+  var target = clamp(c.lane + wob, -LANE_MAX, LANE_MAX);
+  var nl = damp(c.lateral, target, 1.4, dt);
+  var vn = (nl - c.lateral) / Math.max(dt, 1e-4);
+  c.lateral = clamp(nl, -LANE_MAX, LANE_MAX);
+  c.yaw = damp(c.yaw, clamp(Math.atan2(vn, Math.max(60, c.v)), -0.4, 0.4), 6, dt);
+  c.progress = clamp(c.s / raceLen, 0, 1);
+}
+function interact(cars, dt){
+  var n = cars.length;
+  for (var q=0;q<n;q++){ cars[q].draft = 0; cars[q].blocked = 0; cars[q].follow = 1; cars[q].clear = true; }
+  if (n > 120) return;                    // 车特别多时不再做逐对处理（此时允许重叠）
+  var GAP = 52;                           // 车身宽 46：横向拉开到 52 以上才算不重叠
+  var RANGE = 130;                        // 纵向关注范围
+  for (var i=0;i<n;i++){
+    var a = cars[i]; if (a.broken || a.gone) continue;
+    for (var j=i+1;j<n;j++){
+      var b = cars[j]; if (b.broken || b.gone) continue;
+      var ds = a.s - b.s;
+      var ads = ds < 0 ? -ds : ds;
+      if (ads > RANGE) continue;
+      a.clear = false; b.clear = false;
+      var ahead  = ds > 0 ? a : b;
+      var behind = ds > 0 ? b : a;
+      var dl = a.lateral - b.lateral;
+      var adl = dl < 0 ? -dl : dl;
+      if (ads < 120){
+        // 尾流只在斜后方有效（含一点点"抽头"窗口），正后方是乱流 —— 逼出"拉开-抽头-超越"
+        if (adl >= 26 && adl < 62) behind.draft += 0.09;
+        else if (adl < 26) behind.draft -= 0.03;
+        ahead.draft -= 0.04;
+      }
+      if (adl < 32){                       // 同车道跟车：车距小于一个车身长度就不能再快
+        var cap = clamp((ads - 52) / 42, 0, 1);
+        behind.follow = Math.min(behind.follow, cap);
+      }
+      if (adl < GAP){                                                   // 横向推开，直到不再重叠
+        var dir = dl >= 0 ? 1 : -1;
+        if (adl < 0.01) dir = (i % 2 === 0) ? 1 : -1;
+        var push = (GAP - adl) * 2.4 * dt * dir * 0.5;
+        a.lateral = clamp(a.lateral + push, -LANE_MAX, LANE_MAX);
+        b.lateral = clamp(b.lateral - push, -LANE_MAX, LANE_MAX);
+        // 关键：巡航线位跟着一起挪，否则"回到原车道"的阻尼会把两车又拉回重叠位置
+        a.lane = clamp(a.lane + push*0.7, -LANE_MAX, LANE_MAX);
+        b.lane = clamp(b.lane - push*0.7, -LANE_MAX, LANE_MAX);
+      }
+    }
+  }
+  for (var z=0;z<n;z++){
+    cars[z].draft = clamp(cars[z].draft, -0.09, 0.13);
+    cars[z].blocked = clamp(cars[z].blocked, 0, 1);
+    cars[z].follow = clamp(cars[z].follow, 0.45, 1);
+  }
+}
+function updateCamera(dt){
+  var racing = (race.phase === 'racing' || race.phase === 'countdown' || race.phase === 'setup');
+  var targetS, targetFocus;
+  if (racing){
+    var lead = race.ranked && race.ranked[0];
+    targetS = lead ? lead.s : 0;
+    targetFocus = 0.62;
+  } else {
+    targetS = race.track.raceLen - 40;
+    targetFocus = 0.56;
+  }
+  var lam = race.phase === 'racing' ? 4.2 : 3.0;
+  race.cam.s = damp(race.cam.s, targetS, lam, dt);
+  var sp = sampleAt(race.track, race.cam.s);
+  race.cam.x = sp.x; race.cam.y = sp.y;
+  var ahead = sampleAt(race.track, race.cam.s + 330);
+  var lookAng = Math.atan2(ahead.y - sp.y, ahead.x - sp.x);
+  race.cam.ang = dampAngle(race.cam.ang, lookAng, race.phase === 'racing' ? 3.5 : 3.0, dt);
+  race.focusY = damp(race.focusY, targetFocus, 3.0, dt);
+}
+function updateRace(dt){
+  var cars = race.cars;
+  var raceLen = race.track.raceLen;
+  race.elapsed += dt;
+  var t = race.elapsed;
+  try { interact(cars, dt); } catch (e0) {}
+  for (var i=0;i<cars.length;i++){
+    try { updateCar(cars[i], dt, t, raceLen); }
+    catch (e) { cars[i].broken = true; }
+  }
+  race.ranked = rankCars(cars);
+
+  if (race.phase === 'racing'){
+    var lead = race.ranked[0];
+    if (lead && lead.finished){
+      race.phase = 'waiting';
+      race.waitingElapsed = 0;
+      race.leaderFinishAt = lead.finishTime;
+    }
+  } else if (race.phase === 'waiting'){
+    race.waitingElapsed += dt;
+    var fin = 0;
+    for (var k=0;k<cars.length;k++) if (cars[k].finished) fin++;
+    var need = Math.min(10, cars.length);
+    if (fin >= need || race.waitingElapsed >= 5) endRace();
+  } else if (race.phase === 'ending'){
+    race.endingElapsed += dt;
+    var anyVisible = false;
+    for (var m=0;m<cars.length;m++){
+      var cm = cars[m];
+      if (cm.gone) continue;
+      if (Math.abs(cm.s - race.cam.s) < 1200){ anyVisible = true; break; }
+    }
+    if (!anyVisible || race.endingElapsed >= 12) showResults();
+  }
+}
+function endRace(){
+  race.ranked = rankCars(race.cars);
+  race.results = race.ranked.map(function(c){
+    return { name: displayName(c.p), avatar: c.p.avatarDataUrl, finished: c.finished,
+             finishTime: c.finishTime, progress: c.progress };
+  });
+  race.phase = 'ending';
+  race.endingElapsed = 0;
+}
+function carWorld(c){
+  var sp = sampleAt(race.track, c.s);
+  return { x: sp.x + sp.nx*c.lateral, y: sp.y + sp.ny*c.lateral, ang: sp.ang + c.yaw };
+}
+
+/* ------------------------------------------------------------------ *
+ * 渲染
+ * ------------------------------------------------------------------ */
+
+function worldToScreen(x,y){
+  return { x: camMat.a*x + camMat.c*y + camMat.e, y: camMat.b*x + camMat.d*y + camMat.f };
+}
+function strokePts(g, pts, i0, i1, off, width, color, dash){
+  if (i1 <= i0) return;
+  g.beginPath();
+  for (var i=i0;i<=i1;i++){
+    var p = pts[i];
+    var x = off ? p.x + p.nx*off : p.x;
+    var y = off ? p.y + p.ny*off : p.y;
+    if (i === i0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.lineWidth = width;
+  g.strokeStyle = color;
+  if (dash) g.setLineDash(dash); else g.setLineDash([]);
+  g.stroke();
+  if (dash) g.setLineDash([]);
+}
+// 路缘条纹按世界弧长 k*seg 定位（setLineDash 的相位会随可见段起点变化，导致条纹跟着镜头爬）
+function kerbSegments(g, track, sMin, sMax, off, width, color, parity, seg){
+  var inner = off - width/2, outer = off + width/2;
+  var k0 = Math.ceil(sMin/seg), k1 = Math.floor(sMax/seg);
+  g.fillStyle = color;
+  for (var k=k0;k<=k1;k++){
+    if ((((k % 2) + 2) % 2) !== parity) continue;
+    var sA = k*seg, sM = sA + seg/2, sB = sA + seg;
+    var pa = sampleAt(track, sA), pm = sampleAt(track, sM), pb = sampleAt(track, sB);
+    g.beginPath();
+    g.moveTo(pa.x + pa.nx*inner, pa.y + pa.ny*inner);
+    g.lineTo(pm.x + pm.nx*inner, pm.y + pm.ny*inner);
+    g.lineTo(pb.x + pb.nx*inner, pb.y + pb.ny*inner);
+    g.lineTo(pb.x + pb.nx*outer, pb.y + pb.ny*outer);
+    g.lineTo(pm.x + pm.nx*outer, pm.y + pm.ny*outer);
+    g.lineTo(pa.x + pa.nx*outer, pa.y + pa.ny*outer);
+    g.closePath();
+    g.fill();
+  }
+}
+function drawGround(g, cam, halfDiag){
+  var step = 150;
+  var x0 = Math.floor((cam.x - halfDiag)/step)*step;
+  var x1 = cam.x + halfDiag;
+  var y0 = Math.floor((cam.y - halfDiag)/step)*step;
+  var y1 = cam.y + halfDiag;
+  g.fillStyle = 'rgba(122,134,148,0.20)';
+  for (var y=y0;y<=y1;y+=step){
+    for (var x=x0;x<=x1;x+=step){
+      g.fillRect(x-3, y-3, 6, 6);
+    }
+  }
+}
+function drawCheckerLine(g, track, s, rows, cols, depth){
+  var p = sampleAt(track, s);
+  var tx = Math.cos(p.ang), ty = Math.sin(p.ang);
+  var cell = (2*HALF_W)/cols;
+  for (var r=0;r<rows;r++){
+    for (var c=0;c<cols;c++){
+      var u = -HALF_W + (c+0.5)*cell;
+      var v = (r - rows/2 + 0.5) * (depth/rows);
+      var cx = p.x + p.nx*u + tx*v;
+      var cy = p.y + p.ny*u + ty*v;
+      g.fillStyle = ((r+c) % 2 === 0) ? '#23272e' : '#ffffff';
+      g.save();
+      g.translate(cx,cy);
+      g.rotate(p.ang);
+      g.fillRect(-cell/2, -(depth/(2*rows)), cell, depth/rows);
+      g.restore();
+    }
+  }
+}
+function carBodyPath(g){
+  rrect(g, -19, -41, 38, 78, 9);
+}
+function drawWheel(g,x,y){
+  rrect(g, x-4.6, y-5.6, 9.2, 11.2, 2.6);
+  g.fill();
+  g.stroke();
+}
+function drawCarShape(g, detailed){
+  var body = '#ffffff';
+  var line = '#c2c9d2';
+  g.lineJoin = 'round';
+  if (!detailed){
+    g.fillStyle = body; g.strokeStyle = line; g.lineWidth = 2;
+    carBodyPath(g); g.fill(); g.stroke();
+    g.beginPath(); g.arc(0, 1, 12, 0, TAU);
+    g.fillStyle = '#f7f9fb'; g.fill(); g.stroke();
+    return;
+  }
+  g.fillStyle = '#e8ecf0'; g.strokeStyle = '#b4bcc6'; g.lineWidth = 1.4;
+  drawWheel(g,-18.5,-13);
+  drawWheel(g, 18.5,-13);
+  drawWheel(g,-18, 17);
+  drawWheel(g, 18, 17);
+  g.fillStyle = body; g.strokeStyle = line; g.lineWidth = 1.8;
+  rrect(g,-9,-31,18,58,5); g.fill(); g.stroke();
+  rrect(g,-17.5,-16,10.5,26,4.5); g.fill(); g.stroke();
+  rrect(g, 7,-16,10.5,26,4.5); g.fill(); g.stroke();
+  g.beginPath();
+  g.moveTo(-7.5,10); g.lineTo(-4.2,31); g.lineTo(4.2,31); g.lineTo(7.5,10);
+  g.closePath(); g.fill(); g.stroke();
+  rrect(g,-18.5,26,37,8.5,3); g.fill(); g.stroke();
+  rrect(g,-20,25,4,11,1.6); g.fill(); g.stroke();
+  rrect(g, 16,25,4,11,1.6); g.fill(); g.stroke();
+  rrect(g,-17,-41,34,8,2.5); g.fill(); g.stroke();
+  rrect(g,-19,-42,4,11,1.6); g.fill(); g.stroke();
+  rrect(g, 15,-42,4,11,1.6); g.fill(); g.stroke();
+  rrect(g,-2.6,-33,5.2,9,1); g.fill(); g.stroke();
+  g.beginPath(); g.arc(0,1,13.2,0,TAU);
+  g.fillStyle = '#f7f9fb'; g.fill(); g.stroke();
+}
+// 车身与阴影预渲染成贴图：每帧每车只做一次 drawImage，因此可以完全不简化渲染
+var carSprite = null, carShadowSprite = null;
+function buildCarSprites(){
+  var x0 = -25, x1 = 25, y0 = -46, y1 = 39, S = 3.5;
+  function mk(draw){
+    var c = document.createElement('canvas');
+    c.width = Math.round((x1-x0)*S);
+    c.height = Math.round((y1-y0)*S);
+    var g = c.getContext('2d');
+    g.setTransform(S, 0, 0, S, -x0*S, -y0*S);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    draw(g);
+    return { canvas: c, x: x0, y: y0, w: x1-x0, h: y1-y0 };
+  }
+  carSprite = mk(function(g){ drawCarShape(g, true); });
+  carShadowSprite = mk(function(g){
+    g.fillStyle = 'rgba(18,26,38,0.16)';
+    carBodyPath(g); g.fill();
+  });
+}
+function drawAvatar(g, x, y, r, p){
+  if (!p.avatarDisc || r < 3) return;
+  try { g.drawImage(p.avatarDisc, x-r, y-r, r*2, r*2); }
+  catch (e) { /* 单张头像异常不影响整帧 */ }
+}
+var LABEL_FONT = '600 12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+function labelWidth(g, text){
+  g.font = LABEL_FONT;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  return g.measureText(text).width + 16;
+}
+function drawLabel(g, x, y, w, text){
+  g.fillStyle = 'rgba(26,33,44,0.82)';
+  rrect(g, x-w/2, y-11, w, 22, 11);
+  g.fill();
+  g.fillStyle = '#fff';
+  g.fillText(text, x, y+0.5);
+}
+
+function render(){
+  var W = viewW, H = viewH;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = '#e9edf1';
+  ctx.fillRect(0,0,W,H);
+  if (race.phase === 'setup' || !race.track) return;
+  var scale = Math.min(H/VIEW_H, W/MIN_VIEW_W);
+  if (!(scale > 0)) return;
+  var cam = race.cam;
+  var alpha = cam.ang - Math.PI/2;
+  var ca = Math.cos(alpha), sa = Math.sin(alpha);
+  var ma = scale*ca, mb = scale*sa, mc = scale*sa, md = -scale*ca;
+  var me = W/2 - scale*(ca*cam.x + sa*cam.y);
+  var mf = H*race.focusY - scale*(sa*cam.x - ca*cam.y);
+  camMat.a = ma; camMat.b = mb; camMat.c = mc; camMat.d = md;
+  camMat.e = me; camMat.f = mf; camMat.scale = scale;
+  ctx.setTransform(dpr*ma, dpr*mb, dpr*mc, dpr*md, dpr*me, dpr*mf);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  var halfDiag = Math.sqrt(W*W + H*H) / (2*scale);
+  var pts = race.track.pts;
+  var i0 = indexAtS(race.track, cam.s - halfDiag - 160);
+  var i1 = indexAtS(race.track, cam.s + halfDiag + 160);
+
+  drawGround(ctx, cam, halfDiag);
+
+  strokePts(ctx, pts, i0, i1, 0, 2*HALF_W, '#8d9298');
+  strokePts(ctx, pts, i0, i1, HALF_W-5, 5, 'rgba(255,255,255,0.5)');
+  strokePts(ctx, pts, i0, i1, -(HALF_W-5), 5, 'rgba(255,255,255,0.5)');
+  strokePts(ctx, pts, i0, i1, HALF_W+9, 18, '#d24a4a');
+  strokePts(ctx, pts, i0, i1, -(HALF_W+9), 18, '#d24a4a');
+  var kerbLo = cam.s - halfDiag - 60, kerbHi = cam.s + halfDiag + 60;
+  kerbSegments(ctx, race.track, kerbLo, kerbHi, HALF_W+9, 18, '#f3f5f8', 0, 34);
+  kerbSegments(ctx, race.track, kerbLo, kerbHi, -(HALF_W+9), 18, '#f3f5f8', 0, 34);
+
+  var visLo = cam.s - halfDiag - 120, visHi = cam.s + halfDiag + 120;
+  if (0 > visLo && 0 < visHi) drawCheckerLine(ctx, race.track, 0, 2, 16, 46);
+  if (race.track.raceLen > visLo && race.track.raceLen < visHi) drawCheckerLine(ctx, race.track, race.track.raceLen, 2, 16, 46);
+
+  var list = race.ranked.length ? race.ranked : race.cars;
+  var withShadow = list.length <= 60;    // 车特别多时省掉投影填充，但车本身依旧完整绘制
+  for (var i=0;i<list.length;i++){
+    var c = list[i];
+    if (c.broken) continue;
+    if (c.s < cam.s - halfDiag - 220 || c.s > cam.s + halfDiag + 220) continue;
+    var w = carWorld(c);
+    // 局部→屏幕：M * T(w.x,w.y) * R(w.ang - PI/2)，直接合成一个矩阵，省掉 save/restore
+    var th = w.ang - Math.PI/2;
+    var cth = Math.cos(th), sth = Math.sin(th);
+    try {
+      ctx.setTransform(
+        dpr*(ma*cth + mc*sth), dpr*(mb*cth + md*sth),
+        dpr*(-ma*sth + mc*cth), dpr*(-mb*sth + md*cth),
+        dpr*(ma*w.x + mc*w.y + me), dpr*(mb*w.x + md*w.y + mf)
+      );
+      if (withShadow && carShadowSprite) ctx.drawImage(carShadowSprite.canvas, carShadowSprite.x + 6, carShadowSprite.y - 6, carShadowSprite.w, carShadowSprite.h);
+      if (carSprite) ctx.drawImage(carSprite.canvas, carSprite.x, carSprite.y, carSprite.w, carSprite.h);
+    } catch (e) { c.broken = true; }
+  }
+
+  // 屏幕空间：头像与姓名标签（避免镜像/旋转影响文字）
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  var leaderId = race.ranked.length ? race.ranked[0].p.id : -1;
+  var labels = [];
+  var ccx = W/2, ccy = H*race.focusY;
+  var topSet = {};
+  for (var q=0;q<Math.min(3, race.ranked.length);q++) topSet[race.ranked[q].p.id] = true;
+  for (var m=0;m<list.length;m++){
+    var car = list[m];
+    if (car.broken) continue;
+    var wpos = carWorld(car);
+    var sc = camMat;
+    var sp2 = worldToScreen(wpos.x, wpos.y);
+    if (sp2.x < -60 || sp2.x > W+60 || sp2.y < -60 || sp2.y > H+60) continue;
+    var r = 11 * scale;
+    var dx = sp2.x - ccx, dy = sp2.y - ccy;
+    var near = Math.sqrt(dx*dx + dy*dy) < Math.min(W,H)*0.55;
+    var nearLabel = Math.sqrt(dx*dx + dy*dy) < Math.min(W,H)*0.45;
+    var cockpit = worldToScreen(wpos.x + Math.cos(wpos.ang)*1.5, wpos.y + Math.sin(wpos.ang)*1.5);
+    drawAvatar(ctx, cockpit.x, cockpit.y, r, car.p);
+    if (car.p.id === leaderId || topSet[car.p.id] || nearLabel){
+      labels.push({ x: sp2.x, y: sp2.y - (r + 16), text: displayName(car.p) });
+    }
+  }
+  var placed = [];
+  for (var L=0;L<labels.length;L++){
+    var it = labels[L];
+    if (it.x < 42 || it.x > W-42) continue;
+    var lw = labelWidth(ctx, it.text);
+    var ly = Math.max(22, it.y);
+    var bx = it.x - lw/2, by = ly - 11;
+    var clash = false;
+    for (var z=0;z<placed.length;z++){
+      var o = placed[z];
+      if (bx < o.x + o.w && bx + lw > o.x && by < o.y + o.h && by + 22 > o.y){ clash = true; break; }
+    }
+    if (clash) continue;
+    placed.push({ x: bx, y: by, w: lw, h: 22 });
+    drawLabel(ctx, it.x, ly, lw, it.text);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * HUD / 结果页
+ * ------------------------------------------------------------------ */
+
+var hudCache = { s:'', sub:'' };
+function setText(el, key, val){
+  if (hudCache[key] !== val){ hudCache[key] = val; el.textContent = val; }
+}
+var hudTimer = 0;
+function updateHud(dt){
+  hudTimer += dt;
+  if (hudTimer < 0.1 && race.phase !== 'results') return;
+  hudTimer = 0;
+  var lead = race.ranked && race.ranked[0];
+  var fin = 0;
+  for (var i=0;i<race.cars.length;i++) if (race.cars[i].finished) fin++;
+  var st = '准备中', sub = '';
+  if (race.phase === 'countdown'){ st = '准备开始'; sub = '发车倒计时'; }
+  else if (race.phase === 'racing'){ st = '比赛中'; sub = (lead ? ('领先：' + displayName(lead.p)) : '比赛中') + ' · 已跑 ' + fmtTime(race.elapsed); }
+  else if (race.phase === 'waiting'){ st = '等待其他车辆冲线'; sub = '已冲线 ' + fin + '/' + race.cars.length + ' · 剩余 ' + Math.max(0, 5 - race.waitingElapsed).toFixed(1) + 's'; }
+  else if (race.phase === 'ending'){ st = '比赛结束'; sub = '车辆正在驶离赛道 · 已冲线 ' + fin + '/' + race.cars.length; }
+  else if (race.phase === 'results'){
+    var win = race.results && race.results.length ? race.results[0].name : '';
+    st = '比赛结束'; sub = (win ? ('冠军：' + win + ' · ') : '') + '可查看完整名次';
+  }
+  setText(hudStatus, 's', st);
+  setText(hudSub, 'sub', sub);
+  var showRank = (race.phase === 'ending');
+  if (rankBtnEl.hidden !== !showRank) rankBtnEl.hidden = !showRank;
+}
+function updateHint(){
+  var n = participants.length;
+  race.lowQ = false;
+  if (n > 40){
+    hintEl.hidden = false;
+    hintEl.textContent = '参赛者较多（' + n + ' 位），所有车辆均完整渲染；人数很多时车辆会相互重叠。';
+  } else {
+    hintEl.hidden = true;
+  }
+}
+function showCountdownText(v){
+  var txt;
+  if (v > 2.9) txt = '3';
+  else if (v > 1.9) txt = '2';
+  else if (v > 0.9) txt = '1';
+  else txt = '开始';
+  if (countdownText.textContent !== txt) countdownText.textContent = txt;
+}
+function showResults(){
+  var list = race.results || [];
+  boardEl.innerHTML = '';
+  for (var i=0;i<list.length;i++){
+    if (i === 5){
+      var sep = document.createElement('div');
+      sep.className = 'board-sep';
+      sep.textContent = '第 6 名及以后（继续向下滑动）';
+      boardEl.appendChild(sep);
+    }
+    var c = list[i];
+    var row = document.createElement('div');
+    row.className = 'row' + (i===0?' top1':(i===1?' top2':(i===2?' top3':''))) + (i>4?' minor':'');
+    var rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = String(i+1);
+    var img = document.createElement('img'); img.alt = ''; img.src = c.avatar || '';
+    var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = c.name;
+    var stt = document.createElement('span'); stt.className = 'st';
+    stt.textContent = c.finished ? ('完成 · ' + fmtTime(c.finishTime)) : ('进度 ' + Math.round(c.progress*100) + '%');
+    row.appendChild(rank); row.appendChild(img); row.appendChild(nm); row.appendChild(stt);
+    boardEl.appendChild(row);
+  }
+  boardEl.scrollTop = 0;
+  resultNote.textContent = list.length > 5
+    ? ('前 5 名直接显示，向下滑动可查看全部 ' + list.length + ' 位参赛者')
+    : ('共 ' + list.length + ' 位参赛者');
+  resultEl.hidden = false;
+  race.phase = 'results';
+}
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ toastEl.hidden = true; }, 2600);
+}
+
+/* ------------------------------------------------------------------ *
+ * 启动 / 主循环
+ * ------------------------------------------------------------------ */
+
+function resize(){
+  var r = raceView.getBoundingClientRect();
+  viewW = Math.max(1, Math.round(r.width));
+  viewH = Math.max(1, Math.round(r.height));
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(viewW*dpr);
+  canvas.height = Math.round(viewH*dpr);
+  canvas.style.width = viewW + 'px';
+  canvas.style.height = viewH + 'px';
+}
+function startRace(){
+  if (participants.length < 2){
+    toast('至少需要 2 位参赛者才能开始比赛');
+    return;
+  }
+  applyDefaultNames();
+  race.seed = (Math.random()*4294967295) >>> 0;
+  race.track = buildTrack(race.seed, gridPlan(participants.length).depth);
+  race.elapsed = 0; race.waitingElapsed = 0; race.endingElapsed = 0; race.leaderFinishAt = 0;
+  race.results = [];
+  race.focusY = 0.62;
+  var rnd = mulberry32((race.seed ^ 0x9e3779b9) >>> 0);
+  race.cars = createCars(race.track, rnd);
+  race.ranked = rankCars(race.cars);
+  race.phase = 'countdown';
+  race.countdown = 3.9;
+  var startS = race.cars.length ? race.cars[0].s : 0;
+  var sp = sampleAt(race.track, startS);
+  race.cam = { s: startS, x: sp.x, y: sp.y, ang: sp.ang };
+  raceView.hidden = false;
+  setupView.hidden = true;
+  resultEl.hidden = true;
+  countdownEl.hidden = false;
+  countdownText.textContent = '3';
+  hudCache.s = ''; hudCache.sub = ''; hudTimer = 1;
+  updateHint();
+  resize();
+  updateHud(0);
+  hintEl.textContent = hintEl.textContent;
+}
+function backToSetup(){
+  race.phase = 'setup';
+  race.cars = [];
+  race.ranked = [];
+  race.results = [];
+  resultEl.hidden = true;
+  raceView.hidden = true;
+  setupView.hidden = false;
+}
+var last = 0;
+function frame(now){
+  requestAnimationFrame(frame);
+  var dt = (now - last) / 1000;
+  last = now;
+  if (!isFinite(dt) || dt < 0) dt = 0;
+  dt = Math.min(dt, 1/30);
+  if (dt > 0){
+    fpsAcc += dt; fpsFrames++;
+    if (fpsAcc > 1.2){
+      var fps = fpsFrames / fpsAcc;
+      lowQuality = (fps < 42) || participants.length > 24;
+      fpsAcc = 0; fpsFrames = 0;
+    }
+  }
+  try {
+    if (race.phase === 'countdown'){
+      race.countdown -= dt;
+      if (race.countdown <= 0){
+        race.phase = 'racing';
+        race.elapsed = 0;
+        countdownEl.hidden = true;
+      } else {
+        showCountdownText(race.countdown);
+      }
+      updateCamera(dt);
+    } else if (race.phase === 'racing' || race.phase === 'waiting' || race.phase === 'ending' || race.phase === 'results'){
+      updateRace(dt);
+      updateCamera(dt);
+    }
+    updateHud(dt);
+  } catch (e) { /* 单帧异常不影响后续动画 */ }
+  try { render(); } catch (e2) { /* 渲染异常不白屏 */ }
+}
+
+document.getElementById('addBtn').addEventListener('click', function(){
+  var p = addParticipant('');
+  if (p && p.node) p.node.inp.focus();
+});
+document.getElementById('sampleBtn').addEventListener('click', function(){
+  var names = ['阿波罗','闪电','赤兔','疾风','雷霆','星尘'];
+  var added = 0;
+  for (var i=0;i<names.length;i++){
+    if (addParticipant(names[i])) added++;
+  }
+  if (added) toast('已添加 ' + added + ' 位示例参赛者，可点击头像上传自定义图片');
+});
+document.getElementById('clearBtn').addEventListener('click', clearAll);
+document.getElementById('startBtn').addEventListener('click', startRace);
+document.getElementById('backBtn').addEventListener('click', backToSetup);
+document.getElementById('toSetupBtn').addEventListener('click', backToSetup);
+document.getElementById('againBtn').addEventListener('click', function(){ startRace(); });
+rankBtnEl.addEventListener('click', function(){ if (race.phase === 'ending') showResults(); });
+window.addEventListener('resize', function(){ resize(); });
+window.addEventListener('orientationchange', function(){ setTimeout(resize, 200); });
+
+window.__avatarRace = { race: race, participants: participants, buildTrack: buildTrack };
+
+buildCarSprites();
+
+addParticipant('');
+addParticipant('');
+renderList();
+resize();
+requestAnimationFrame(function(t){ last = t; requestAnimationFrame(frame); });
+})();
+</script>
+</body>
+</html>
