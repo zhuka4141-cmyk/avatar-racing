@@ -578,7 +578,7 @@ function rankCars(cars){
   });
 }
 function createCars(track, rnd){
-  var baseSpeed = track.raceLen / 19.6;
+  var baseSpeed = track.raceLen / 18.2;
   var cars = participants.map(function(p){
     return {
       p: p, s: 0, v: 0, lateral: 0, yaw: 0, progress: 0,
@@ -591,6 +591,7 @@ function createCars(track, rnd){
       paceSeed2: rnd() * TAU,
       paceSeed3: rnd() * TAU,
       draft: 0, blocked: 0, follow: 1, gone: false, clear: true,
+      rank: 1, surgeTimer: 0, surgeCooldown: 1 + rnd()*4, surgePower: 0,
       lane: 0, baseLane: 0
     };
   });
@@ -615,7 +616,30 @@ function updateCar(c, dt, t, raceLen){
     var pace = 1 + 0.085*Math.sin(t*0.37 + c.paceSeed)
                  + 0.05*Math.sin(t*0.93 + c.paceSeed2)
                  + 0.035*Math.sin(t*0.21 + c.paceSeed3);
-    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked);
+    // ---- 追赶机制 ----
+    // 掉队的车获得追赶增益，并会随机触发冲刺；一旦进入前 3 名或咬住领先者，增益与冲刺立刻暂停。
+    var rank = c.rank || 1;
+    var total = race.cars.length;
+    var gap = Math.max(0, (race.leaderS || c.s) - c.s);
+    // 位置系数：第 1 名最慢（0.90），越靠后越快（最后一名 1.18）
+    var rf = total > 1 ? clamp((rank - 1) / (total - 1), 0, 1) : 0;
+    var posFactor = 0.90 + 0.28 * Math.pow(rf, 0.8);
+    // 真的掉队（落后领先者 400 单位以上）再额外给一点追赶增益
+    var gapBoost = clamp((gap - 400) / 900, 0, 1) * 0.12;
+    // 随机冲刺：只有掉出前 3 名才会触发，重新回到前 3 就暂停
+    if (c.surgeTimer > 0) c.surgeTimer -= dt;
+    c.surgeCooldown -= dt;
+    if (c.surgeTimer <= 0 && c.surgeCooldown <= 0){
+      if (Math.random() < 0.55){
+        c.surgeTimer = 1.2 + Math.random()*2.4;      // 冲刺持续 1.2~3.6s
+        c.surgePower = 0.05 + Math.random()*0.07;    // +5%~12%
+      }
+      c.surgeCooldown = 2.0 + Math.random()*4.5;
+    }
+    var surge = (c.surgeTimer > 0 && rank > 3) ? c.surgePower : 0;
+    var catchup = clamp(posFactor + gapBoost + surge, 0.80, 1.32);
+    c.catchup = catchup;
+    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * catchup;
   }
   if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel*dt));
   else c.v = 0;
@@ -703,11 +727,14 @@ function updateRace(dt){
   race.elapsed += dt;
   var t = race.elapsed;
   try { interact(cars, dt); } catch (e0) {}
+  var lead0 = race.ranked && race.ranked[0];
+  race.leaderS = lead0 ? lead0.s : 0;
   for (var i=0;i<cars.length;i++){
     try { updateCar(cars[i], dt, t, raceLen); }
     catch (e) { cars[i].broken = true; }
   }
   race.ranked = rankCars(cars);
+  for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
 
   if (race.phase === 'racing'){
     var lead = race.ranked[0];
