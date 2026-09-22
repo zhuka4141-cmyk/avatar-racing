@@ -15,7 +15,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     let ok = false;
     for (let i=0;i<80;i++){
       const s = await page.evaluate(function(){ return window.__avatarRace.race.phase; });
-      if (s === 'results' || s === 'ending'){ ok = true; break; }
+      if (s === 'results'){ ok = true; break; }
       await page.waitForTimeout(500);
     }
     const res = await page.evaluate(function(){

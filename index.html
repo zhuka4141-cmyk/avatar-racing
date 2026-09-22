@@ -578,7 +578,7 @@ function rankCars(cars){
   });
 }
 function createCars(track, rnd){
-  var baseSpeed = track.raceLen / 18.2;
+  var baseSpeed = track.raceLen / 21.5;
   var cars = participants.map(function(p){
     return {
       p: p, s: 0, v: 0, lateral: 0, yaw: 0, progress: 0,
@@ -590,13 +590,21 @@ function createCars(track, rnd){
       paceSeed: rnd() * TAU,
       paceSeed2: rnd() * TAU,
       paceSeed3: rnd() * TAU,
-      draft: 0, blocked: 0, follow: 1, gone: false, clear: true,
+      draft: 0, gone: false, stuck: false, stuckTimer: 0, breakoutTimer: 0,
       rank: 1, surgeTimer: 0, surgeCooldown: 1 + rnd()*4, surgePower: 0,
-      finishBias: (rnd()*2-1) * 0.015,      // 终点段 ±1.5% 微偏置，避免完全同时冲线
+      finishBias: 0,                         // 终点段偏置，下面按洗牌结果分配
       lane: 0, baseLane: 0
     };
   });
   var n = cars.length;
+  // 终点段偏置：把 [-1.5%, +1.5%] 均分成 n 份随机分配，每辆车的值互不相同，
+  // 因此最后 4200 单位里各车到线时刻天然错开（不会同一毫秒冲线），且每局重新洗牌保证公平。
+  var slots = [];
+  for (var s0=0;s0<n;s0++) slots.push(s0);
+  for (var s1=n-1;s1>0;s1--){ var s2 = Math.floor(rnd()*(s1+1)); var tmp = slots[s1]; slots[s1] = slots[s2]; slots[s2] = tmp; }
+  for (var s3=0;s3<n;s3++){
+    cars[s3].finishBias = ((slots[s3]/(n>1?(n-1):1)) - 0.5) * 0.06;
+  }
   var gridSpan = 2*(HALF_W - 20);
   var lanes = Math.max(1, Math.floor((2*(LANE_MAX - 4)) / 52) + 1);
   for (var i=0;i<n;i++){
@@ -624,7 +632,7 @@ function updateCar(c, dt, t, raceLen){
     var gap = Math.max(0, (race.leaderS || c.s) - c.s);
     // 位置系数：第 1 名最慢（0.90），越靠后越快（最后一名 1.18）
     var rf = total > 1 ? clamp((rank - 1) / (total - 1), 0, 1) : 0;
-    var posFactor = 0.90 + 0.28 * Math.pow(rf, 0.8);
+    var posFactor = 0.94 + 0.20 * Math.pow(rf, 0.8);
     // 真的掉队（落后领先者 400 单位以上）再额外给一点追赶增益
     var gapBoost = clamp((gap - 400) / 900, 0, 1) * 0.12;
     // 随机冲刺：只有掉出前 3 名才会触发，重新回到前 3 就暂停
@@ -638,11 +646,19 @@ function updateCar(c, dt, t, raceLen){
       c.surgeCooldown = 2.0 + Math.random()*4.5;
     }
     var surge = (c.surgeTimer > 0 && rank > 3) ? c.surgePower : 0;
-    var catchup = clamp(posFactor + gapBoost + surge, 0.80, 1.32);
-    var finishRamp = clamp((c.s - (raceLen - 4200)) / 4200, 0, 1);   // 最后 4200 单位逐渐取消加速/减速
-    if (finishRamp > 0) catchup = lerp(catchup, 1 + c.finishBias, finishRamp);
+    var rb = posFactor + gapBoost + surge;
+    var finishRamp = clamp((c.s - (raceLen - 5000)) / 5000, 0, 1);   // 最后 5000 单位逐渐取消橡皮筋
+    if (finishRamp > 0) rb = lerp(rb, 1 + c.finishBias, finishRamp);
+    // 被前车挡住（车身重叠）累计超过 2 秒 → 落后的这辆立刻爆发，冲上去
+    if (c.stuck) c.stuckTimer += dt;
+    else c.stuckTimer = Math.max(0, c.stuckTimer - dt * 3);
+    if (c.stuckTimer >= 2 && c.breakoutTimer <= 0){ c.breakoutTimer = 1.8; c.stuckTimer = 0; }
+    if (c.breakoutTimer > 0) c.breakoutTimer -= dt;
+    c.breakingOut = c.breakoutTimer > 0;
+    var breakout = c.breakingOut ? 0.45 * (c.breakoutTimer / 1.8) : 0;   // 立刻 +45%，1.8 秒内衰减
+    var catchup = clamp(rb + breakout, 0.80, 1.65);
     c.catchup = catchup;
-    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * catchup;
+    targetV = c.baseSpeed * pace * (1 + c.draft) * catchup;
   }
   if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel*dt));
   else c.v = 0;
@@ -666,10 +682,10 @@ function updateCar(c, dt, t, raceLen){
 }
 function interact(cars, dt){
   var n = cars.length;
-  for (var q=0;q<n;q++){ cars[q].draft = 0; cars[q].blocked = 0; cars[q].follow = 1; cars[q].clear = true; }
-  if (n > 120) return;                    // 车特别多时不再做逐对处理（此时允许重叠）
-  var GAP = 52;                           // 车身宽 46：横向拉开到 52 以上才算不重叠
-  var RANGE = 130;                        // 纵向关注范围
+  for (var q=0;q<n;q++){ cars[q].draft = 0; cars[q].stuck = false; }
+  if (n > 120) return;                    // 车特别多时不做逐对处理
+  var RANGE = 110;
+  var SIDE = 46;                          // 车身宽 46：横向差小于 46 即视为车身重叠
   for (var i=0;i<n;i++){
     var a = cars[i]; if (a.broken || a.gone) continue;
     for (var j=i+1;j<n;j++){
@@ -677,38 +693,17 @@ function interact(cars, dt){
       var ds = a.s - b.s;
       var ads = ds < 0 ? -ds : ds;
       if (ads > RANGE) continue;
-      a.clear = false; b.clear = false;
       var ahead  = ds > 0 ? a : b;
       var behind = ds > 0 ? b : a;
       var dl = a.lateral - b.lateral;
       var adl = dl < 0 ? -dl : dl;
-      if (ads < 120){
-        // 尾流只在斜后方有效（含一点点"抽头"窗口），正后方是乱流 —— 逼出"拉开-抽头-超越"
-        if (adl >= 26 && adl < 62) behind.draft += 0.09;
-        else if (adl < 26) behind.draft -= 0.03;
-        ahead.draft -= 0.04;
-      }
-      if (adl < 32){                       // 同车道跟车：车距小于一个车身长度就不能再快
-        var cap = clamp((ads - 52) / 42, 0, 1);
-        behind.follow = Math.min(behind.follow, cap);
-      }
-      if (adl < GAP){                                                   // 横向推开，直到不再重叠
-        var dir = dl >= 0 ? 1 : -1;
-        if (adl < 0.01) dir = (i % 2 === 0) ? 1 : -1;
-        var push = (GAP - adl) * 2.4 * dt * dir * 0.5;
-        a.lateral = clamp(a.lateral + push, -LANE_MAX, LANE_MAX);
-        b.lateral = clamp(b.lateral - push, -LANE_MAX, LANE_MAX);
-        // 关键：巡航线位跟着一起挪，否则"回到原车道"的阻尼会把两车又拉回重叠位置
-        a.lane = clamp(a.lane + push*0.7, -LANE_MAX, LANE_MAX);
-        b.lane = clamp(b.lane - push*0.7, -LANE_MAX, LANE_MAX);
-      }
+      if (adl < 62){ behind.draft += 0.09; ahead.draft -= 0.04; }   // 尾流 / 乱流
+      // 车身重叠（纵向一车身内、横向一车身内）且自己在后面 → 计入"被挡住"时间
+      if (ads < 80 && adl < SIDE) behind.stuck = true;
+      // 不做任何横向阻挡：车与车可以互相穿过，只在被挡满 2 秒后触发冲刺（见 updateCar）
     }
   }
-  for (var z=0;z<n;z++){
-    cars[z].draft = clamp(cars[z].draft, -0.09, 0.13);
-    cars[z].blocked = clamp(cars[z].blocked, 0, 1);
-    cars[z].follow = clamp(cars[z].follow, 0.45, 1);
-  }
+  for (var z=0;z<n;z++) cars[z].draft = clamp(cars[z].draft, -0.09, 0.13);
 }
 function updateCamera(dt){
   var racing = (race.phase === 'racing' || race.phase === 'countdown' || race.phase === 'setup');
@@ -1109,6 +1104,7 @@ function showCountdownText(v){
 function showResults(){
   var list = race.results || [];
   boardEl.innerHTML = '';
+  var prevMs = -1;                      // 显示层单调化：真实成绩若落在同一毫秒，按名次顺延 1ms
   for (var i=0;i<list.length;i++){
     if (i === 5){
       var sep = document.createElement('div');
@@ -1123,7 +1119,14 @@ function showResults(){
     var img = document.createElement('img'); img.alt = ''; img.src = c.avatar || '';
     var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = c.name;
     var stt = document.createElement('span'); stt.className = 'st';
-    stt.textContent = c.finished ? ('完成 · ' + fmtTime(c.finishTime)) : ('进度 ' + Math.round(c.progress*100) + '%');
+    if (c.finished){
+      var ms = Math.round(c.finishTime * 1000);
+      if (ms <= prevMs) ms = prevMs + 1;
+      prevMs = ms;
+      stt.textContent = '完成 · ' + (ms/1000).toFixed(3) + 's';
+    } else {
+      stt.textContent = '进度 ' + Math.round(c.progress*100) + '%';
+    }
     row.appendChild(rank); row.appendChild(img); row.appendChild(nm); row.appendChild(stt);
     boardEl.appendChild(row);
   }
