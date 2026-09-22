@@ -388,9 +388,9 @@ function applyUpload(p, file){
  * ------------------------------------------------------------------ */
 
 function gridPlan(n){
-  var cols = Math.max(1, Math.min(Math.max(1,n), Math.floor((2*LANE_MAX) / 50) + 1));
+  var cols = Math.max(1, Math.min(Math.max(1,n), Math.floor((2*(LANE_MAX - 4)) / 60) + 1));
   var rows = Math.max(1, Math.ceil(Math.max(1,n) / cols));
-  var spacing = rows > 1 ? clamp(1100 / (rows - 1), 32, 80) : 80;
+  var spacing = 100; // 车长约 78；人数增加时延长起跑区，不压缩车距。
   return { cols: cols, rows: rows, spacing: spacing, depth: 70 + (rows - 1) * spacing + 140 };
 }
 function buildTrack(seed, backRunoff){
@@ -591,19 +591,19 @@ function createCars(track, rnd){
       paceSeed2: rnd() * TAU,
       paceSeed3: rnd() * TAU,
       draft: 0, blocked: 0, follow: 1, gone: false, clear: true,
-      rank: 1, surgeTimer: 0, surgeCooldown: 1 + rnd()*4, surgePower: 0,
+      rank: 1, catchup: 1, surgeTimer: 0, surgeCooldown: 1 + rnd()*4, surgePower: 0,
       finishBias: (rnd()*2-1) * 0.015,      // 终点段 ±1.5% 微偏置，避免完全同时冲线
-      lane: 0, baseLane: 0
+      lane: 0, baseLane: 0, passUntil: 0
     };
   });
   var n = cars.length;
-  var gridSpan = 2*(HALF_W - 20);
-  var lanes = Math.max(1, Math.floor((2*(LANE_MAX - 4)) / 52) + 1);
+  var grid = gridPlan(n);
+  var gridSpan = 2*(LANE_MAX - 4);
   for (var i=0;i<n;i++){
-    var u = n > 1 ? (i/(n-1) - 0.5) : 0;
-    cars[i].lateral = u * gridSpan;    // 起步：全部挤在同一排，重叠也无所谓
-    cars[i].s = -70;
-    cars[i].lane = lanes > 1 ? (-(LANE_MAX - 4) + (i % lanes) * (2*(LANE_MAX - 4))/(lanes-1)) : 0;
+    var col = i % grid.cols;
+    cars[i].lateral = grid.cols > 1 ? (col/(grid.cols-1) - 0.5) * gridSpan : 0;
+    cars[i].s = -70 - Math.floor(i/grid.cols) * grid.spacing;
+    cars[i].lane = cars[i].lateral;
     cars[i].baseLane = cars[i].lane;
   }
   return cars;
@@ -618,31 +618,31 @@ function updateCar(c, dt, t, raceLen){
                  + 0.05*Math.sin(t*0.93 + c.paceSeed2)
                  + 0.035*Math.sin(t*0.21 + c.paceSeed3);
     // ---- 追赶机制 ----
-    // 掉队的车获得追赶增益，并会随机触发冲刺；一旦进入前 3 名或咬住领先者，增益与冲刺立刻暂停。
+    // 后车获得平滑追赶增益；冲刺开始后持续到结束，保留完成超车的速度优势。
     var rank = c.rank || 1;
     var total = race.cars.length;
-    var gap = Math.max(0, (race.leaderS || c.s) - c.s);
+    var gap = Math.max(0, (Number.isFinite(race.leaderS) ? race.leaderS : c.s) - c.s);
     // 位置系数：第 1 名最慢（0.90），越靠后越快（最后一名 1.18）
     var rf = total > 1 ? clamp((rank - 1) / (total - 1), 0, 1) : 0;
     var posFactor = 0.90 + 0.28 * Math.pow(rf, 0.8);
-    // 真的掉队（落后领先者 400 单位以上）再额外给一点追赶增益
-    var gapBoost = clamp((gap - 400) / 900, 0, 1) * 0.12;
-    // 随机冲刺：只有掉出前 3 名才会触发，重新回到前 3 就暂停
+    // 落后 200 单位后逐渐补偿，最大额外 +12%，不直接改变里程。
+    var gapBoost = clamp((gap - 200) / 800, 0, 1) * 0.12;
+    // 第二名也可以冲刺；超到前面后不立刻刹车，减少名次在同一位置反复跳动。
     if (c.surgeTimer > 0) c.surgeTimer -= dt;
     c.surgeCooldown -= dt;
-    if (c.surgeTimer <= 0 && c.surgeCooldown <= 0){
+    if (rank > 1 && c.surgeTimer <= 0 && c.surgeCooldown <= 0){
       if (Math.random() < 0.55){
         c.surgeTimer = 1.2 + Math.random()*2.4;      // 冲刺持续 1.2~3.6s
         c.surgePower = 0.05 + Math.random()*0.07;    // +5%~12%
       }
       c.surgeCooldown = 2.0 + Math.random()*4.5;
     }
-    var surge = (c.surgeTimer > 0 && rank > 3) ? c.surgePower : 0;
+    var surge = c.surgeTimer > 0 ? c.surgePower : 0;
     var catchup = clamp(posFactor + gapBoost + surge, 0.80, 1.32);
-    var finishRamp = clamp((c.s - (raceLen - 4200)) / 4200, 0, 1);   // 最后 4200 单位逐渐取消加速/减速
+    var finishRamp = clamp((c.s - (raceLen - 1800)) / 1800, 0, 1);   // 保留中后段争夺，末段平滑淡出追赶。
     if (finishRamp > 0) catchup = lerp(catchup, 1 + c.finishBias, finishRamp);
-    c.catchup = catchup;
-    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * catchup;
+    c.catchup = damp(c.catchup, catchup, 3, dt);
+    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * c.catchup;
   }
   if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel*dt));
   else c.v = 0;
@@ -655,7 +655,7 @@ function updateCar(c, dt, t, raceLen){
     c.finishTime = t - dt * frac;
   }
   if (c.s > raceLen + 2800) c.gone = true;
-  c.lane = damp(c.lane, c.baseLane, 0.18, dt);
+  if (t >= c.passUntil) c.lane = damp(c.lane, c.baseLane, 0.18, dt);
   var wob = 7 * Math.sin(t*0.62 + c.wobbleSeed*2.1);
   var target = clamp(c.lane + wob, -LANE_MAX, LANE_MAX);
   var nl = damp(c.lateral, target, 1.4, dt);
@@ -664,10 +664,45 @@ function updateCar(c, dt, t, raceLen){
   c.yaw = damp(c.yaw, clamp(Math.atan2(vn, Math.max(60, c.v)), -0.4, 0.4), 6, dt);
   c.progress = clamp(c.s / raceLen, 0, 1);
 }
+function planOvertakes(cars){
+  // 每 0.25 秒找一次空侧；保留目标 1.8 秒，避免左右来回抖动。
+  if (race.elapsed < 0.7 || race.elapsed < (race.nextPassCheck || 0)) return;
+  race.nextPassCheck = race.elapsed + 0.25;
+  for (var i=0;i<cars.length;i++){
+    var c = cars[i];
+    if (c.finished || c.broken || c.gone || race.elapsed < c.passUntil) continue;
+    var front = null, nearest = 220;
+    for (var j=0;j<cars.length;j++){
+      var other = cars[j], gap = other.s - c.s;
+      if (other === c || other.broken || other.gone) continue;
+      if (gap > 20 && gap < nearest && Math.abs(other.lateral-c.lateral) < 48){
+        front = other; nearest = gap;
+      }
+    }
+    if (!front || (c.v < front.v - 15 && nearest > 120)) continue;
+    var best = null, bestRoom = 0;
+    for (var side=-1;side<=1;side+=2){
+      var lane = c.lateral + side*64;
+      if (Math.abs(lane) > LANE_MAX - 4) continue;
+      var room = 250;
+      for (var k=0;k<cars.length;k++){
+        var o = cars[k], ds = o.s-c.s;
+        if (o === c || o.broken || o.gone || ds < -100 || ds > 220) continue;
+        // 同时检查目标车道与正在切入的车，避免同时抢同一个空隙。
+        if (Math.abs(o.lateral-lane) < 52 || (o.passUntil > race.elapsed && Math.abs(o.lane-lane) < 52)){
+          room = Math.min(room, Math.abs(ds));
+        }
+      }
+      if (room > 105 && room > bestRoom){ best = lane; bestRoom = room; }
+    }
+    if (best !== null){ c.lane = best; c.passUntil = race.elapsed + 1.8; }
+  }
+}
 function interact(cars, dt){
   var n = cars.length;
   for (var q=0;q<n;q++){ cars[q].draft = 0; cars[q].blocked = 0; cars[q].follow = 1; cars[q].clear = true; }
   if (n > 120) return;                    // 车特别多时不再做逐对处理（此时允许重叠）
+  planOvertakes(cars);
   var GAP = 52;                           // 车身宽 46：横向拉开到 52 以上才算不重叠
   var RANGE = 130;                        // 纵向关注范围
   for (var i=0;i<n;i++){
@@ -682,17 +717,17 @@ function interact(cars, dt){
       var behind = ds > 0 ? b : a;
       var dl = a.lateral - b.lateral;
       var adl = dl < 0 ? -dl : dl;
-      if (ads < 120){
+      if (ads > 20 && ads < 120){
         // 尾流只在斜后方有效（含一点点"抽头"窗口），正后方是乱流 —— 逼出"拉开-抽头-超越"
         if (adl >= 26 && adl < 62) behind.draft += 0.09;
         else if (adl < 26) behind.draft -= 0.03;
         ahead.draft -= 0.04;
       }
-      if (adl < 32){                       // 同车道跟车：车距小于一个车身长度就不能再快
+      if (ads > 20 && adl < 32){            // 并排车辆不互相刹车；只对真正的前车限速。
         var cap = clamp((ads - 52) / 42, 0, 1);
         behind.follow = Math.min(behind.follow, cap);
       }
-      if (adl < GAP){                                                   // 横向推开，直到不再重叠
+      if (ads < 86 && adl < GAP){          // 只有车身纵向接近时才推开；不要搅乱前后排发车。
         var dir = dl >= 0 ? 1 : -1;
         if (adl < 0.01) dir = (i % 2 === 0) ? 1 : -1;
         var push = (GAP - adl) * 2.4 * dt * dir * 0.5;
@@ -1164,11 +1199,13 @@ function startRace(){
   race.seed = (Math.random()*4294967295) >>> 0;
   race.track = buildTrack(race.seed, gridPlan(participants.length).depth);
   race.elapsed = 0; race.waitingElapsed = 0; race.endingElapsed = 0; race.leaderFinishAt = 0;
+  race.nextPassCheck = 0;
   race.results = [];
   race.focusY = 0.62;
   var rnd = mulberry32((race.seed ^ 0x9e3779b9) >>> 0);
   race.cars = createCars(race.track, rnd);
   race.ranked = rankCars(race.cars);
+  for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
   race.phase = 'countdown';
   race.countdown = 3.9;
   var startS = race.cars.length ? race.cars[0].s : 0;
