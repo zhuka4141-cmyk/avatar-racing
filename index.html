@@ -928,7 +928,7 @@ function drawLabel(g, x, y, w, text){
   g.fillText(text, x, y+0.5);
 }
 
-function render(){
+function render(dt){
   var W = viewW, H = viewH;
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.fillStyle = '#e9edf1';
@@ -991,43 +991,61 @@ function render(){
 
   // 屏幕空间：头像与姓名标签（避免镜像/旋转影响文字）
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  var nowMs = (window.performance && performance.now) ? performance.now() : Date.now();
   var leaderId = race.ranked.length ? race.ranked[0].p.id : -1;
   var labels = [];
   var ccx = W/2, ccy = H*race.focusY;
-  var topSet = {};
-  for (var q=0;q<Math.min(3, race.ranked.length);q++) topSet[race.ranked[q].p.id] = true;
+  var labelR = Math.min(W,H) * 0.34;
+  var LABEL_MAX = 6;
   for (var m=0;m<list.length;m++){
     var car = list[m];
     if (car.broken) continue;
     var wpos = carWorld(car);
-    var sc = camMat;
     var sp2 = worldToScreen(wpos.x, wpos.y);
-    if (sp2.x < -60 || sp2.x > W+60 || sp2.y < -60 || sp2.y > H+60) continue;
+    if (sp2.x < -60 || sp2.x > W+60 || sp2.y < -60 || sp2.y > H+60){ car.labelAlpha = 0; continue; }
     var r = 11 * scale;
     var dx = sp2.x - ccx, dy = sp2.y - ccy;
-    var near = Math.sqrt(dx*dx + dy*dy) < Math.min(W,H)*0.55;
-    var nearLabel = Math.sqrt(dx*dx + dy*dy) < Math.min(W,H)*0.45;
+    var distC = Math.sqrt(dx*dx + dy*dy);
     var cockpit = worldToScreen(wpos.x + Math.cos(wpos.ang)*1.5, wpos.y + Math.sin(wpos.ang)*1.5);
     drawAvatar(ctx, cockpit.x, cockpit.y, r, car.p);
-    if (car.p.id === leaderId || topSet[car.p.id] || nearLabel){
-      labels.push({ x: sp2.x, y: sp2.y - (r + 16), text: displayName(car.p) });
+    // 标签只按"离镜头中心的距离"判定：名次每秒变动十几次，用名次当判据必然闪烁。
+    // 距离是连续量，再加 2 秒保持时间；显示/隐藏再走一次淡入淡出，彻底不会"啪"地跳出来。
+    if (distC < labelR) car.labelUntil = nowMs + 2000;
+    var shown = (car.labelUntil || 0) > nowMs;
+    car.labelAlpha = damp(car.labelAlpha || 0, shown ? 1 : 0, 12, dt);
+    if (car.labelAlpha > 0.05){
+      var sameName = 0;
+      for (var t2=0;t2<m;t2++){
+        var oc = list[t2];
+        if (oc && oc.p.id !== car.p.id && displayName(oc.p) === displayName(car.p)) sameName++;
+      }
+      labels.push({ x: sp2.x, y: sp2.y - (r + 16), text: displayName(car.p),
+                    alpha: car.labelAlpha,
+                    pri: distC + car.p.id * 0.001 + sameName * 6 });
     }
   }
+  // 按距离排序 + id 稳定破平局；名次一变去重顺序就整批换位，所以不能按名次排
+  labels.sort(function(a,b){ return a.pri - b.pri; });
+  if (labels.length > LABEL_MAX) labels = labels.slice(0, LABEL_MAX);
+  race.labelNames = [];
   var placed = [];
   for (var L=0;L<labels.length;L++){
     var it = labels[L];
-    if (it.x < 42 || it.x > W-42) continue;
+    if (it.x < 42 || it.x > W-42){ it.alpha = 0; continue; }
     var lw = labelWidth(ctx, it.text);
     var ly = Math.max(22, it.y);
     var bx = it.x - lw/2, by = ly - 11;
     var clash = false;
     for (var z=0;z<placed.length;z++){
       var o = placed[z];
-      if (bx < o.x + o.w && bx + lw > o.x && by < o.y + o.h && by + 22 > o.y){ clash = true; break; }
+      if (bx < o.x + o.w + 4 && bx + lw + 4 > o.x && by < o.y + o.h + 2 && by + 24 > o.y){ clash = true; break; }
     }
-    if (clash) continue;
-    placed.push({ x: bx, y: by, w: lw, h: 22 });
+    if (clash){ it.alpha = 0; continue; }
+    placed.push({ x: bx, y: by, w: lw, h: 22, alc: it });
+    race.labelNames.push(it.text);
+    ctx.globalAlpha = it.alpha;
     drawLabel(ctx, it.x, ly, lw, it.text);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -1199,7 +1217,7 @@ function frame(now){
     }
     updateHud(dt);
   } catch (e) { /* 单帧异常不影响后续动画 */ }
-  try { render(); } catch (e2) { /* 渲染异常不白屏 */ }
+  try { render(dt); } catch (e2) { /* 渲染异常不白屏 */ }
 }
 
 document.getElementById('addBtn').addEventListener('click', function(){
