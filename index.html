@@ -156,7 +156,7 @@ function rrect(g,x,y,w,h,r){
   g.lineTo(x,y+r); g.arcTo(x,y,x+r,y,r);
   g.closePath();
 }
-function fmtTime(v){ return (Math.round(v*10)/10).toFixed(1) + 's'; }
+function fmtTime(v){ return (v >= 0 ? v.toFixed(3) : '0.000') + 's'; }   // 毫秒精度
 function dist(a,b){ var dx=b.x-a.x, dy=b.y-a.y; return Math.sqrt(dx*dx+dy*dy); }
 
 var setupView = document.getElementById('setupView');
@@ -592,6 +592,7 @@ function createCars(track, rnd){
       paceSeed3: rnd() * TAU,
       draft: 0, blocked: 0, follow: 1, gone: false, clear: true,
       rank: 1, surgeTimer: 0, surgeCooldown: 1 + rnd()*4, surgePower: 0,
+      finishBias: (rnd()*2-1) * 0.015,      // 终点段 ±1.5% 微偏置，避免完全同时冲线
       lane: 0, baseLane: 0
     };
   });
@@ -638,13 +639,21 @@ function updateCar(c, dt, t, raceLen){
     }
     var surge = (c.surgeTimer > 0 && rank > 3) ? c.surgePower : 0;
     var catchup = clamp(posFactor + gapBoost + surge, 0.80, 1.32);
+    var finishRamp = clamp((c.s - (raceLen - 4200)) / 4200, 0, 1);   // 最后 4200 单位逐渐取消加速/减速
+    if (finishRamp > 0) catchup = lerp(catchup, 1 + c.finishBias, finishRamp);
     c.catchup = catchup;
     targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * catchup;
   }
   if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel*dt));
   else c.v = 0;
   c.s += c.v * dt;
-  if (!c.finished && c.s >= raceLen){ c.finished = true; c.finishTime = t; }
+  if (!c.finished && c.s >= raceLen){
+    c.finished = true;
+    // 这一帧只走了 v*dt，冲线发生在帧内某个比例处 —— 反推出精确的亚帧时刻
+    var travelled = c.v * dt;
+    var frac = travelled > 1e-6 ? clamp((c.s - raceLen) / travelled, 0, 1) : 0;
+    c.finishTime = t - dt * frac;
+  }
   if (c.s > raceLen + 2800) c.gone = true;
   c.lane = damp(c.lane, c.baseLane, 0.18, dt);
   var wob = 7 * Math.sin(t*0.62 + c.wobbleSeed*2.1);
