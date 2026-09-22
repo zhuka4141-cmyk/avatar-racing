@@ -2,6 +2,11 @@
 
 浏览器单页自动观赏赛车游戏。按 `2026-09-22-avatar-racing-design.md` 规格实现，并包含后续提出的四项改动（更弯的赛道、更多超车、结算后继续跑、名次可下滑）。
 
+## 在线试玩
+
+- GitHub Pages：https://zhuka4141-cmyk.github.io/avatar-racing/
+- 源码仓库：https://github.com/zhuka4141-cmyk/avatar-racing
+
 ## 运行
 
 - 直接双击 `avatar-racing/index.html`（file:// 打开即可，页面不发起任何网络请求）。
