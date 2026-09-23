@@ -1097,10 +1097,10 @@ function labelWidth(g, text){
   return g.measureText(text).width + 16;
 }
 function drawLabel(g, x, y, w, text){
-  g.fillStyle = 'rgba(26,33,44,0.82)';
+  g.fillStyle = 'rgba(26,33,44,0.5)';        // 更透明：名字重叠时也能看见下面那层
   rrect(g, x-w/2, y-11, w, 22, 11);
   g.fill();
-  g.fillStyle = '#fff';
+  g.fillStyle = 'rgba(255,255,255,0.92)';
   g.fillText(text, x, y+0.5);
 }
 
@@ -1190,38 +1190,21 @@ function render(dt){
       labels.push({ p: car.p, x: sp2.x, y: sp2.y - (r + 16), text: displayName(car.p), alpha: car.labelAlpha });
     }
   }
-  // 固定按 id 排序摆放：顺序若随镜头距离变，每帧「谁先占位」都不同，名字就会跳格
+  // 名字只跟着自己的车走，不做任何让位/避让：位置 = 车头正上方，只保留「不出画面」的边界收拢。
+  // 顺序固定按 id，纯粹为了让重叠时的覆盖顺序稳定（后画的压在上面）。
   labels.sort(function(a,b){ return a.p.id - b.p.id; });
   race.labelNames = [];
-  var placed = [];
   for (var L=0;L<labels.length;L++){
     var it = labels[L];
     var txt = it.text;
-    var p0 = it.p;    // 宽度与让位偏移都缓存在参赛者上
+    var p0 = it.p;
     if (p0.labelW === undefined || p0.labelWName !== txt){ p0.labelW = labelWidth(ctx, txt); p0.labelWName = txt; }
     var lw = p0.labelW;
-    // 贴边的名字不再丢弃，改成把标签整体推回画面内
     var cx = Math.min(Math.max(it.x, lw/2 + 4), W - lw/2 - 4);
-    var baseY = Math.min(Math.max(it.y, 22), H - 22);
-    var ly = baseY;
-    // 重叠也不再隐藏：上下推移找空位；实在挤不下也照画 —— 所有人都必须看得见名字
-    for (var tr=0; tr<6; tr++){
-      var bx = cx - lw/2, by = ly - 11, clash = false;
-      for (var z=0;z<placed.length;z++){
-        var o = placed[z];
-        if (bx < o.x + o.w + 4 && bx + lw + 4 > o.x && by < o.y + o.h + 2 && by + 24 > o.y){ clash = true; break; }
-      }
-      if (!clash) break;
-      var step = Math.ceil((tr + 1) / 2) * 20;
-      ly = Math.min(Math.max(baseY + (tr % 2 === 0 ? -step : step), 22), H - 22);
-    }
-    // 让位偏移走阻尼：目标格子变了也是滑过去，不会「啪」地跳一帧
-    p0.labelDy = damp(p0.labelDy === undefined ? (ly - baseY) : p0.labelDy, ly - baseY, 8, dt);
-    var drawY = Math.min(Math.max(baseY + p0.labelDy, 22), H - 22);
-    placed.push({ x: cx - lw/2, y: drawY - 11, w: lw, h: 22 });
+    var ly = Math.min(Math.max(it.y, 22), H - 22);
     race.labelNames.push(txt);
     ctx.globalAlpha = it.alpha;
-    drawLabel(ctx, cx, drawY, lw, txt);
+    drawLabel(ctx, cx, ly, lw, txt);
     ctx.globalAlpha = 1;
   }
 }
