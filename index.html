@@ -1457,7 +1457,7 @@ function render(dt){
     var wpos = carWorld(car);
     var sp2 = worldToScreen(wpos.x, wpos.y);
     if (sp2.x < -80 || sp2.x > W+80 || sp2.y < -80 || sp2.y > H+80){
-      car.labelAlpha = damp(car.labelAlpha || 0, 0, 6, dt);   // 只有驶出画面才淡出
+      car.labelAlpha = damp(car.labelAlpha || 0, 0, 15, dt);   // 只有驶出画面才淡出（同样快速）
       continue;
     }
     var r = 11 * scale;
@@ -1466,13 +1466,13 @@ function render(dt){
     var cockpit = worldToScreen(wpos.x + Math.cos(wpos.ang)*1.5, wpos.y + Math.sin(wpos.ang)*1.5);
     drawAvatar(ctx, cockpit.x, cockpit.y, r, car.p);
     // 只要在画面内就一直显示名字：不再按「离镜头中心的距离」筛选，也没有 6 个的上限
-    // 名字窗口 = 「还没冲线」的车里最靠前的 15 台：过了终点线就淡出，位置顺延给后面还在跑的车
-    // （整体名次 - 已冲线台数 = 在跑车里的名次；16/17 名迟滞保留，避免边界抖动闪烁）
+    // 名字窗口 = 「还没冲线」的车里最靠前的 30 台：过了终点线就让位，位置顺延给后面还在跑的车
+    // （整体名次 - 已冲线台数 = 在跑车里的名次；31/32 名迟滞保留，避免边界抖动闪烁）
     var rkAlive = car.finished ? 1e9 : ((car.rank || 1) - finCount);
-    if (rkAlive <= 15) car.labelOn = true;
-    else if (rkAlive > 17) car.labelOn = false;
-    car.labelAlpha = damp(car.labelAlpha || 0, car.labelOn ? 1 : 0, 2.2, dt);   // 淡入淡出慢一点，切换不僵硬
-    if (car.labelAlpha > 0.02){
+    if (rkAlive <= 30) car.labelOn = true;
+    else if (rkAlive > 32) car.labelOn = false;
+    car.labelAlpha = damp(car.labelAlpha || 0, car.labelOn ? 1 : 0, 15, dt);   // 快速显示：约 0.15 秒，只为避免硬切
+    if (car.labelAlpha > 0.01){
       labels.push({ p: car.p, x: sp2.x, y: sp2.y - (r + 12), text: displayName(car.p), alpha: car.labelAlpha });
     }
   }
