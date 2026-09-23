@@ -1218,7 +1218,7 @@ function updateRace(dt){
 function endRace(){
   race.ranked = rankCars(race.cars);
   race.results = race.ranked.map(function(c){
-    return { name: displayName(c.p), avatar: c.p.avatarDataUrl, finished: c.finished,
+    return { name: displayName(c.p), avatar: c.p.avatarDataUrl || c.p.avatarDiscUrl || '', finished: c.finished,
              finishTime: c.finishTime, progress: c.progress };
   });
   race.phase = 'ending';
@@ -1550,7 +1550,7 @@ function showResults(){
     var row = document.createElement('div');
     row.className = 'row' + (i===0?' top1':(i===1?' top2':(i===2?' top3':''))) + (i>4?' minor':'');
     var rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = String(i+1);
-    var img = document.createElement('img'); img.alt = ''; img.src = c.avatar || '';
+    var img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer'; img.src = c.avatar || '';
     var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = c.name;
     var stt = document.createElement('span'); stt.className = 'st';
     stt.textContent = c.finished ? ('完成 · ' + fmtTime(c.finishTime)) : ('进度 ' + Math.round(c.progress*100) + '%');
