@@ -1449,6 +1449,8 @@ function render(dt){
   var labels = [];
   var ccx = W/2, ccy = H*race.focusY;
   ctx.font = LABEL_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  var finCount = 0;                        // 已冲线的车不再显示名字，名字窗口顺延给还在跑的车
+  for (var fm=0; fm<list.length; fm++) if (list[fm].finished) finCount++;
   for (var m=0;m<list.length;m++){
     var car = list[m];
     if (car.broken) continue;
@@ -1464,10 +1466,11 @@ function render(dt){
     var cockpit = worldToScreen(wpos.x + Math.cos(wpos.ang)*1.5, wpos.y + Math.sin(wpos.ang)*1.5);
     drawAvatar(ctx, cockpit.x, cockpit.y, r, car.p);
     // 只要在画面内就一直显示名字：不再按「离镜头中心的距离」筛选，也没有 6 个的上限
-    // 只在画面内显示「前 15 名」的名字；名次掉到 16/17 名先留着，超过 17 名才淡出 —— 边界抖动不会闪
-    var rk = car.rank || 1;
-    if (rk <= 15) car.labelOn = true;
-    else if (rk > 17) car.labelOn = false;
+    // 名字窗口 = 「还没冲线」的车里最靠前的 15 台：过了终点线就淡出，位置顺延给后面还在跑的车
+    // （整体名次 - 已冲线台数 = 在跑车里的名次；16/17 名迟滞保留，避免边界抖动闪烁）
+    var rkAlive = car.finished ? 1e9 : ((car.rank || 1) - finCount);
+    if (rkAlive <= 15) car.labelOn = true;
+    else if (rkAlive > 17) car.labelOn = false;
     car.labelAlpha = damp(car.labelAlpha || 0, car.labelOn ? 1 : 0, 2.2, dt);   // 淡入淡出慢一点，切换不僵硬
     if (car.labelAlpha > 0.02){
       labels.push({ p: car.p, x: sp2.x, y: sp2.y - (r + 12), text: displayName(car.p), alpha: car.labelAlpha });
