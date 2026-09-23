@@ -18,6 +18,8 @@ button{font:inherit}
 .wrap{max-width:720px;margin:0 auto;padding:22px 16px 150px}
 .head h1{font-size:24px;letter-spacing:.5px}
 .head .sub{margin-top:8px;color:#68727f;font-size:13px;line-height:1.65}
+.head .ver{margin-top:6px;color:#98a4b3;font-size:12px;line-height:1.6}
+.head .ver #diag{margin-left:8px;color:#c0663b;font-weight:600}
 .head .count{display:inline-block;margin-left:8px;padding:2px 10px;border-radius:999px;background:#e8f0fe;color:#2f6df6;font-size:13px;font-weight:700;vertical-align:middle;white-space:nowrap}
 .list{margin-top:18px;display:flex;flex-direction:column;gap:10px}
 .card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e7ee;border-radius:14px;padding:10px 12px;box-shadow:0 1px 2px rgba(20,30,50,.04)}
@@ -75,6 +77,7 @@ button{font:inherit}
     <div class="head">
       <h1>头像赛车<span id="countBadge" class="count">共 0 位参赛者</span></h1>
       <p class="sub">填写姓名并上传头像，点击“开始比赛”即可观看全自动头像赛车。至少需要 2 位参赛者；头像只在当前页面会话中使用，不会上传到任何服务器。</p>
+      <p class="ver">构建 v4 · 头像来源：本地 avatars/ → 远程地址 → 默认头像<span id="diag"></span></p>
     </div>
     <div id="list" class="list"></div>
     <div id="empty" class="empty">还没有参赛者，点击下方“添加参赛者”或“填入示例参赛者”开始。</div>
@@ -82,6 +85,7 @@ button{font:inherit}
   <div class="actions">
     <button id="addBtn" class="btn" type="button">添加参赛者</button>
     <button id="sampleBtn" class="btn ghost" type="button">填入示例参赛者</button>
+    <button id="rosterBtn" class="btn ghost" type="button">载入粉丝名单</button>
     <button id="csvBtn" class="btn ghost" type="button">导入 CSV 名单</button>
     <input id="csvInput" type="file" accept=".csv,text/csv,text/plain" hidden />
     <button id="shuffleBtn" class="btn ghost" type="button">随机排序</button>
@@ -179,6 +183,7 @@ ctx.imageSmoothingQuality = 'high';
 var hudStatus = document.getElementById('hudStatus');
 var hudSub = document.getElementById('hudSub');
 var countBadge = document.getElementById('countBadge');
+var diagEl = document.getElementById('diag');
 var countdownEl = document.getElementById('countdown');
 var countdownText = document.getElementById('countdownText');
 var hintEl = document.getElementById('hint');
@@ -357,13 +362,186 @@ function parseCsv(text){
   if (field !== '' || row.length){ row.push(field); rows.push(row); }
   return rows;
 }
+var BUILTIN_ROSTER = [
+  ["🐟🔥🤔", "sze_and_light"],
+  ["Jubatus Racing", "jubatusracing"],
+  ["Team Quasar", "quasar_hk"],
+  ["PCPS_Hermes", "pcps_hermes"],
+  ["Diana", "diana.1i15"],
+  ["Kinetic Racing", "project.kinetic"],
+  ["Team Proioxis", "proioxisrt"],
+  ["V", "good_vf"],
+  ["_.yunggg._", "_.yunggg._"],
+  ["Chipiee🥜", "hwccc_1204._"],
+  ["Mathew Ho", "ho607970"],
+  ["Nam_:D0602", "nam_0602_"],
+  ["LSTC.after", "lstc.after"],
+  ["Leith turbo", "leith.turbo"],
+  ["Sally", "sally.xjx"],
+  ["Persied🌠", "cilsonlee"],
+  ["Jayden120919", "jayden120919"],
+  ["✰", "j0yce__98"],
+  ["Ho Tommy", "tommyh_ho"],
+  ["irissss._1201", "irissss._1201"],
+  ["STEM Racing Hong Kong & Macau", "stemracing_hkmo"],
+  ["ᴡɪɴɢ ت", "ltwwww._"],
+  ["NORI Racing", "nori.racingg"],
+  ["Quantum Velocity", "quantum_velocity_racing"],
+  ["Alpenglow 🌄", "alpenglow.srhk"],
+  ["HKUST Red Bird Racing (EVRT)", "red.bird.racing_hkust"],
+  ["Blaze Racing", "blazeracing_hk"],
+  ["Yroyii", "tong_yang0301"],
+  ["Milo🐟_ミロ🐟_🐟", "terumi000517"],
+  ["Dopeee🐧🐧", "cheung_hillary"],
+  ["Sarah", "lyxsarah0728"],
+  ["Samuellam", "samuellam0_0"],
+  ["ᕦ(ò_óˇ)ᕤ", "kylecthang"],
+  ["Eŉ_ǐQinna_öçĥ", "izeqina_0614"],
+  ["ab.bii", "twc.model"],
+  ["≼꒰´•͈ ˕ •͈ ྀི꒱≽~.", "moon._.yiu.u"],
+  ["joel", "joel._.1655"],
+  ["Stephanie Ko", "s.ko.0614"],
+  ["𝓵𝓾𝔃𝟓𝟓𝟔𝟔", "luz_30069"],
+  ["🍃", "ip__cy"],
+  ["Marcus", "marcus__0801"],
+  ["mckwongg", "mckwongg"],
+  ["mycof.feejourney", "mycof.feejourney"],
+  ["🤓", "8.lo_ve.31"],
+  ["Dika_1222", "dika_lo_1222"],
+  ["T.T.Fong", "t.t.fong"],
+  ["Kong", "_kmy_rf_t"],
+  ["(ಠ_ಠ)💢", "jenson_fung_"],
+  ["Funina La", "funina.la"],
+  ["𝓣𝓮𝓪𝓶 𝓘𝓷𝓯𝓲𝓷𝓲𝓽𝔂", "team_infinity_hk"],
+  ["❤️‍🔥NEON❤️‍🔥", "neon_f1.in.school"],
+  ["WTN🦥", "tnam_wong"],
+  ["Gordon Tam", "1_tcyin_27"],
+  ["Yareliiiii^", "lyy._.0815_"],
+  ["𝑣.", "vegetable_1399"],
+  ["玫瑰", "p221017"],
+  ["Zhuang Qian", "ckzhuang930"],
+  ["🌧️ིྀ", "rainie._.haha"],
+  ["😾", "parker._.0522"],
+  ["hyt _1912", "hyt_12198"],
+  ["^_   ̫  _ ̥`", "yuan._0511ovo"],
+  ["Wilson", "wilson_ying_1019"],
+  ["C-REBEL🖤", "yuqi_ailey8818"],
+  ["misa^", "wwtinging_"],
+  ["Chloe Lam", "lwy.yui"],
+  ["Judy", "judy_qing_qing"],
+  ["To～", "luca.s0705"],
+  ["(0_0)", "lp._.1119"],
+  ["周信", "ccrob0921"],
+  ["MEM", "mem_9294_"],
+  ["Coco 🎀", "tclee_31"],
+  ["Tayo_C", "tayo_cmh"],
+  ["🍉", "nyk._sophia"],
+  ["🩰🥜", "_.rillenee._"],
+  ["Tiff._.any", "tiffany_ho1018"],
+  ["闻汐未归", "ching_liuuu"],
+  ["스카이☁️", "fbiiswatchingu_"],
+  ["Javis CCL 5/2", "javischoi0205"],
+  ["ChanYatLong0110", "chanyatlong0110"],
+  ["戴浩然", "tai_hy_908"],
+  ["leongyinggg__", "leongyinggg__"],
+  ["Natasha", "himuna._"],
+  ["小灰灰", "06_29.hui"],
+  ["_.p8yh16", "_.p8yh16"],
+  ["𝐒𝐓𝐀𝐑✮⋆˙𝐖⋆💤", "sheeta._.star"],
+  ["𝕵𝖆𝖘𝖔𝖓", "jason_is_0719"],
+  ["Kong", "kong.tung.l"],
+  ["’ٮ’", "myo_1225"],
+  ["NSP", "nspuii"],
+  ["Henry", "henrykuan_0529"],
+  ["𝑹𝒂𝒊𝒏", "l.k.w_rain"],
+  ["Howie", "y2k_iytr"],
+  ["珊.", "z1saansk"],
+  ["sukii.", "su.n_i1"],
+  ["belleeeeee", "belle_tsang1"],
+  ["Brian Hui", "brian10.__"],
+  ["Charlotte Tam", "char_1otte1014"],
+  ["Ken Poon", "z.e.p.y.x.l"],
+  ["𝓝 𝓚 𝓨", "nky._y_y"],
+  ["🐟", "jason08.16"],
+  ["Cody", "lam._cody"],
+  ["𝑿. 𝓬𝓱𝓲𝓷𝓰ˣʰ", "hei_ching_927"],
+  ["🧠🚮", "_.building.__"],
+  ["🅷🅰🅽🅶", "xryanu"],
+  ["_629.son__", "_629.son__"],
+  ["kigruu", "kigruu"],
+  ["mabel__xu", "mabel__xu"],
+  ["jayden_chuchu5", "jayden_chuchu5"],
+  ["ChoCoLo_1222", "choco_lo_1222"],
+  ["西瓜君", "watermelon_9797"],
+  ["coet.nov23", "coet.nov23"],
+  ["Carson", "ca.rson9114"],
+  ["俞旭濤🐵", "yux5_130"],
+  ["Emmet Lam", "emmet_little_lam"],
+  ["IsaacC", "1saac_.0721"],
+  ["NASA🐵", "yux_5140"],
+  ["kwok～KYH", "kwok.kyh"],
+  ["Gary Getter", "garygetter"],
+  ["Johnny", "johnny_thedumbboy"],
+  ["Kyau", "kyau6._"],
+  ["l_hoi_05", "l_hoi_05"],
+  ["Carson", "ca.rson91144"],
+  ["Cadennnnnn", "caden.590"],
+  ["stan_neon", "stan_neon"],
+  ["Totally._.", "yan._.08.08"],
+  ["カッ パ", "k.c.y._"],
+  ["嵐", "iammia_83"],
+  ["🪐", "ink_914"],
+  ["🟣𝐁𝐀𝐔𝐇𝐈𝐍𝐈𝐀🟣", "team.bauhinia"],
+  ["𝒌𝒐𝒊𝒇𝒊𝒔𝒉🐟", "kmoifish_"],
+  ["Toilet", "wallace__0823"],
+  ["-𝐑𝐨𝐬𝐞-", "rare._.roseeeeee"],
+  ["🫥💤", "moses_0326"],
+  ["🐷", "oliv.ertime"],
+  ["🌧️", "briisannn"]
+];
+// 一键载入内置名单（135 位粉丝，头像取站点自带的 avatars/<用户名>.jpg）
+function importBuiltinRoster(){
+  if (!BUILTIN_ROSTER.length){ toast('内置名单为空'); return; }
+  participants.length = 0;
+  listEl.innerHTML = '';
+  gridOrder = null;
+  var added = 0, loading = 0, finished = 0, failed = 0, firstErr = '';
+  for (var i=0;i<BUILTIN_ROSTER.length;i++){
+    var nm = BUILTIN_ROSTER[i][0], un = BUILTIN_ROSTER[i][1];
+    var pp = { id: nextId++, name: nm || un, avatarSource: null, avatar: null, avatarDataUrl: '', avatarDiscUrl: '' };
+    participants.push(pp);
+    setDefaultAvatar(pp);
+    listEl.appendChild(buildCard(pp));
+    added++;
+    loading++;
+    (function(pp2, un2){
+      setAvatarFromSources(pp2, ['avatars/' + un2 + '.jpg'], function(ok, err){
+        finished++;
+        if (!ok){ failed++; if (!firstErr) firstErr = err || '未知原因'; }
+        if (finished === loading){
+          if (diagEl) diagEl.textContent = failed ? ('头像失败 ' + failed + ' / ' + loading + '（' + firstErr + '）') : ('头像 ' + loading + ' 张全部就绪');
+          toast('已载入 ' + added + ' 位参赛者：头像成功 ' + (loading-failed) + ' 张' + (failed ? '，失败 ' + failed + ' 张' : ''));
+        }
+      });
+    })(pp, un);
+  }
+  emptyEl.hidden = participants.length > 0;
+  updateCount();
+  updateHint();
+  renderList();
+  toast('已载入 ' + added + ' 位参赛者，正在取头像…');
+}
 // 依次尝试多个头像来源，第一个成功为止
 function setAvatarFromSources(p, sources, done){
-  var i = 0;
+  var i = 0, lastErr = '';
   (function next(){
-    if (i >= sources.length){ if (done) done(false); return; }
+    if (i >= sources.length){ if (done) done(false, lastErr); return; }
     var url = sources[i++];
-    setRemoteAvatar(p, url, function(ok){ if (ok){ if (done) done(true); } else next(); });
+    setRemoteAvatar(p, url, function(ok, err){
+      if (ok){ if (done) done(true); return; }
+      if (err) lastErr = err;
+      next();
+    });
   })();
 }
 var csvStat = null;
@@ -445,26 +623,23 @@ function loadBitmap(file){
     }
   });
 }
-// 把任意图源裁成圆形贴图（赛车用 canvas，卡片用另一份白底方形）
+// 把任意图源裁成圆形贴图。只用一张画布（135 张头像时省一半 2D context，避免画布耗尽）
 function makeDisc(src, w, h){
   var size = 192;
-  var c = document.createElement('canvas');
-  c.width = size; c.height = size;
-  var g = c.getContext('2d');
-  var m = Math.min(w, h);
-  if (!(m > 0)) throw new Error('bad-size');
-  g.fillStyle = '#ffffff'; g.fillRect(0,0,size,size);
-  g.drawImage(src, (w-m)/2, (h-m)/2, m, m, 0, 0, size, size);
   var disc = document.createElement('canvas');
   disc.width = disc.height = size;
   var dg = disc.getContext('2d');
+  if (!dg) throw new Error('no-2d-context');
+  var m = Math.min(w, h);
+  if (!(m > 0)) throw new Error('bad-size');
   dg.save();
   dg.beginPath(); dg.arc(size/2, size/2, size/2 - 1, 0, TAU); dg.clip();
-  dg.drawImage(c, 0, 0);
+  dg.fillStyle = '#ffffff'; dg.fillRect(0, 0, size, size);
+  dg.drawImage(src, (w-m)/2, (h-m)/2, m, m, 0, 0, size, size);
   dg.restore();
   dg.beginPath(); dg.arc(size/2, size/2, size/2 - 4, 0, TAU);
   dg.lineWidth = 6; dg.strokeStyle = 'rgba(20,22,26,0.9)'; dg.stroke();
-  return { disc: disc, flat: c };
+  return disc;
 }
 // 远程头像（CSV 导入用）：不带 Referer 取图，失败就保持默认头像
 function setRemoteAvatar(p, url, done){
@@ -472,15 +647,21 @@ function setRemoteAvatar(p, url, done){
   im.referrerPolicy = 'no-referrer';
   im.onload = function(){
     try {
-      p.avatarDisc = makeDisc(im, im.naturalWidth || 150, im.naturalHeight || 150).disc;
+      p.avatarDisc = makeDisc(im, im.naturalWidth || 150, im.naturalHeight || 150);
       p.avatarDiscUrl = url;
       p.avatarDataUrl = '';        // 清掉默认头像的 dataURL，否则卡片缩略图会用旧图盖住名单头像
       p.avatarSource = 'remote';
       syncCard(p);
       if (done) done(true);
-    } catch (e){ if (done) done(false); }
+    } catch (e){
+      if (window.console) console.warn('头像绘制失败', url, e);
+      if (done) done(false, '绘制失败：' + (e && e.message ? e.message : e));
+    }
   };
-  im.onerror = function(){ if (done) done(false); };
+  im.onerror = function(){
+    if (window.console) console.warn('头像加载失败', url);
+    if (done) done(false, '加载失败：' + url);
+  };
   im.src = url;
 }
 function applyUpload(p, file){
@@ -498,9 +679,8 @@ function applyUpload(p, file){
       var size = 192;
       var w = src.width || src.naturalWidth || size;
       var h = src.height || src.naturalHeight || size;
-      var r = makeDisc(src, w, h);
-      p.avatarDisc = r.disc;
-      p.avatarDataUrl = r.flat.toDataURL('image/png');   // 本地文件不污染画布，可以导出 dataURL
+      p.avatarDisc = makeDisc(src, w, h);
+      p.avatarDataUrl = p.avatarDisc.toDataURL('image/png');   // 本地文件不污染画布，可以导出 dataURL
       p.avatarDiscUrl = '';
       p.avatarSource = 'upload';
       syncCard(p);
@@ -1485,6 +1665,7 @@ document.getElementById('addBtn').addEventListener('click', function(){
   var p = addParticipant('');
   if (p && p.node) p.node.inp.focus();
 });
+document.getElementById('rosterBtn').addEventListener('click', importBuiltinRoster);
 document.getElementById('csvBtn').addEventListener('click', function(){ document.getElementById('csvInput').click(); });
 document.getElementById('csvInput').addEventListener('change', function(e){
   var file = e.target.files && e.target.files[0];
