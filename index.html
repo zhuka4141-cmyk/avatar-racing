@@ -48,7 +48,6 @@ button{font:inherit}
 .hud-btn{pointer-events:auto;margin-left:auto;height:42px;border-radius:10px;border:1px solid #d5dbe4;background:rgba(255,255,255,.94);padding:0 14px;font-size:13px;cursor:pointer}
 .countdown{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .countdown i{font-style:normal;font-size:min(30vmin,220px);font-weight:800;color:#fff;letter-spacing:3px;text-shadow:0 8px 34px rgba(18,26,40,.5),0 2px 6px rgba(18,26,40,.45)}
-.hint{position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:#5a6472;background:rgba(255,255,255,.88);border-radius:10px;padding:8px;border:1px solid #e2e7ee}
 .result{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(18,24,34,.28)}
 .result-card{width:100%;max-width:430px;max-height:calc(100% - 24px);overflow:auto;background:#fff;border-radius:18px;padding:18px 16px;box-shadow:0 20px 50px rgba(10,16,26,.35)}
 .result-card h2{font-size:20px;text-align:center}
@@ -105,7 +104,6 @@ button{font:inherit}
     <button id="backBtn" class="hud-btn" type="button">Setup</button>
   </div>
   <div id="countdown" class="countdown" hidden><i id="countdownText">3</i></div>
-  <div id="hint" class="hint" hidden></div>
   <div id="result" class="result" hidden>
     <div class="result-card">
       <h2>Race finished</h2>
@@ -186,7 +184,6 @@ var countBadge = document.getElementById('countBadge');
 var diagEl = document.getElementById('diag');
 var countdownEl = document.getElementById('countdown');
 var countdownText = document.getElementById('countdownText');
-var hintEl = document.getElementById('hint');
 var resultEl = document.getElementById('result');
 var resultNote = document.getElementById('resultNote');
 var boardEl = document.getElementById('board');
@@ -1519,14 +1516,7 @@ function updateHud(dt){
   if (rankBtnEl.hidden !== !showRank) rankBtnEl.hidden = !showRank;
 }
 function updateHint(){
-  var n = participants.length;
-  race.lowQ = false;
-  if (n > 40){
-    hintEl.hidden = false;
-    hintEl.textContent = 'Lots of cars (' + n + '): every car is fully rendered, but they will overlap in traffic.';
-  } else {
-    hintEl.hidden = true;
-  }
+  race.lowQ = false;      // 「参赛者较多…」提示已按需求删除，这里只保留低画质标记复位
 }
 function showCountdownText(v){
   var txt;
@@ -1615,7 +1605,6 @@ function startRace(){
   updateHint();
   resize();
   updateHud(0);
-  hintEl.textContent = hintEl.textContent;
 }
 function backToSetup(){
   race.phase = 'setup';
