@@ -357,6 +357,15 @@ function parseCsv(text){
   if (field !== '' || row.length){ row.push(field); rows.push(row); }
   return rows;
 }
+// 依次尝试多个头像来源，第一个成功为止
+function setAvatarFromSources(p, sources, done){
+  var i = 0;
+  (function next(){
+    if (i >= sources.length){ if (done) done(false); return; }
+    var url = sources[i++];
+    setRemoteAvatar(p, url, function(ok){ if (ok){ if (done) done(true); } else next(); });
+  })();
+}
 var csvStat = null;
 function importCsvText(text){
   var rows = parseCsv(String(text).replace(/^\uFEFF/, ''));
@@ -381,9 +390,14 @@ function importCsvText(text){
     setDefaultAvatar(pp);                       // 先挂默认头像，远程图到了再替换
     listEl.appendChild(buildCard(pp));
     added++;
-    if (/^https?:\/\//i.test(url)){
+    // 头像来源优先级：仓库自带的 avatars/<用户名>.jpg（同源、不会过期）→ CSV 里的远程地址 → 默认头像
+    var user = iUser >= 0 ? String(row[iUser]||'').trim() : '';
+    var srcs = [];
+    if (/^[A-Za-z0-9._-]{1,40}$/.test(user)) srcs.push('avatars/' + user + '.jpg');
+    if (/^https?:\/\//i.test(url)) srcs.push(url);
+    if (srcs.length){
       loading++;
-      setRemoteAvatar(pp, url, function(ok){
+      setAvatarFromSources(pp, srcs, function(ok){
         finished++; if (!ok) failed++;
         if (finished === loading){
           toast('已导入 ' + added + ' 位参赛者：头像成功 ' + (loading-failed) + ' 张' + (failed ? '，失败 ' + failed + ' 张（用默认头像）' : ''));
