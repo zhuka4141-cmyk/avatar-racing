@@ -63,6 +63,22 @@ results --再来一局--> countdown（保留参赛者资料，重建赛道/种�
   因为远程图没有 CORS 头，**赛车头像用 canvas 圆盘绘制**（跨域污染只影响像素读取，不影响 `drawImage`），**卡片缩略图直接用图片地址**（污染的画布不能 `toDataURL`）；
   单张图三级全失败也只影响那一行。注意 `avatars/` 里的文件名就是用户名，其中 6 个以 `_` 开头 —— 靠仓库根的 `.nojekyll` 才能在 GitHub Pages 上正常访问。
 
+### 以后更新名单（自己就能做，不用找人）
+
+1. **立刻可用**：打开游戏页 →「导入 CSV 名单」→ 选新的导出文件。头像优先用仓库里的 `avatars/<用户名>.jpg`，没有的自动回退到 CSV 里的远程地址。
+2. **想把新头像也存进仓库**（不依赖 Instagram、不会过期、也不怕扩展拦截）：
+
+   ```powershell
+   cd C:\Users\lstcstudent\OneDrive\Desktop\deeepseek\avatar-racing
+   .\tools\fetch-avatars.cmd C:\路径\IGFollow_xxx.csv -Push
+   ```
+
+   脚本按用户名下载到 `avatars/<用户名>.jpg`（文件名必须 = 用户名，页面就是按这个找图的），随后自动 `git commit` + `git push`，线上约 1 分钟生效。
+   实测：拿 135 行的导出文件跑，**135 成功 / 0 失败**，文件名与仓库现有集合完全一致。
+
+   用 `.cmd` 而不是直接跑 `.ps1`，是因为 Windows 默认执行策略会拦 `.ps1`；`.ps1` 本身带 UTF-8 BOM，中文提示不会乱码。
+
+
 ### 赛道生成（阶梯布局 + 真 U 型弯）
 
 - `mulberry32(seed)` 可复现 PRNG；每局新种子，布局为「长直道 → 半圆 U 型弯 → 长直道 → …」的阶梯结构，实测每局 2 个 U 型弯（弯道弧长约占全长 47%）。
