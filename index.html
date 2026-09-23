@@ -82,6 +82,8 @@ button{font:inherit}
   <div class="actions">
     <button id="addBtn" class="btn" type="button">添加参赛者</button>
     <button id="sampleBtn" class="btn ghost" type="button">填入示例参赛者</button>
+    <button id="csvBtn" class="btn ghost" type="button">导入 CSV 名单</button>
+    <input id="csvInput" type="file" accept=".csv,text/csv,text/plain" hidden />
     <button id="shuffleBtn" class="btn ghost" type="button">随机排序</button>
     <button id="clearBtn" class="btn danger" type="button">清空全部</button>
     <button id="startBtn" class="btn primary" type="button">开始比赛</button>
@@ -233,8 +235,10 @@ function setDefaultAvatar(p){
 }
 function syncCard(p){
   var n = p.node; if (!n) return;
-  if (n.img.getAttribute('src') !== p.avatarDataUrl) n.img.setAttribute('src', p.avatarDataUrl);
-  n.tag.textContent = (p.avatarSource === 'upload') ? '自定义头像' : '默认头像';
+  var src = p.avatarDataUrl || p.avatarDiscUrl || '';     // 远程头像不能用 toDataURL（画布被跨域污染），直接用地址
+  if (n.img.getAttribute('src') !== src) n.img.setAttribute('src', src);
+  n.tag.textContent = (p.avatarSource === 'upload') ? '自定义头像'
+                    : (p.avatarSource === 'remote' ? '名单头像' : '默认头像');
 }
 function buildCard(p){
   var card = document.createElement('div');
@@ -247,7 +251,7 @@ function buildCard(p){
   inp.placeholder = '参赛者姓名'; inp.value = p.name || '';
   inp.addEventListener('input', function(){
     p.name = inp.value;
-    if (p.avatarSource !== 'upload') setDefaultAvatar(p);
+    if (p.avatarSource !== 'upload' && p.avatarSource !== 'remote') setDefaultAvatar(p);
     syncCard(p);
   });
   var row = document.createElement('div'); row.className = 'card-row';
@@ -264,7 +268,7 @@ function buildCard(p){
   var resetBtn = document.createElement('button');
   resetBtn.type = 'button'; resetBtn.className = 'btn small ghost'; resetBtn.textContent = '用默认头像';
   resetBtn.addEventListener('click', function(){
-    p.avatarSource = null; setDefaultAvatar(p); syncCard(p);
+    p.avatarSource = null; p.avatarDiscUrl = ''; setDefaultAvatar(p); syncCard(p);
     toast('已恢复默认头像：' + displayName(p));
   });
   row.appendChild(upLabel); row.appendChild(resetBtn);
@@ -337,6 +341,63 @@ function shuffleAll(){
   renderList();
   toast('名单和发车位置都已打乱');
 }
+// ---- CSV 名单导入（Instagram 粉丝导出：Fullname + Avatar URL）----
+function parseCsv(text){
+  var rows = [], row = [], field = '', inQ = false;
+  for (var i=0;i<text.length;i++){
+    var ch = text.charAt(i);
+    if (inQ){
+      if (ch === '"'){ if (text.charAt(i+1) === '"'){ field += '"'; i++; } else inQ = false; }
+      else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ','){ row.push(field); field = ''; }
+    else if (ch === '\n'){ row.push(field); rows.push(row); row = []; field = ''; }
+    else if (ch !== '\r') field += ch;
+  }
+  if (field !== '' || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+var csvStat = null;
+function importCsvText(text){
+  var rows = parseCsv(String(text).replace(/^\uFEFF/, ''));
+  if (rows.length < 2){ toast('这个 CSV 里没有数据行'); return; }
+  var head = rows[0].map(function(s){ return String(s).trim().toLowerCase(); });
+  var iName = head.indexOf('fullname'), iUser = head.indexOf('username');
+  var iAv = head.indexOf('avatar url'); if (iAv < 0) iAv = head.indexOf('avatar');
+  if (iName < 0 && iUser < 0){ toast('表头里找不到 Fullname / Username 列'); return; }
+  if (iAv < 0){ toast('表头里找不到 Avatar URL 列'); return; }
+  participants.length = 0;
+  listEl.innerHTML = '';
+  gridOrder = null;
+  var added = 0, loading = 0, finished = 0, failed = 0;
+  for (var r=1;r<rows.length;r++){
+    var row = rows[r];
+    if (!row || row.join('').replace(/[\s,]/g, '') === '') continue;
+    var name = (iName >= 0 ? String(row[iName]||'').trim() : '') ||
+               (iUser >= 0 ? String(row[iUser]||'').trim() : '') || ('赛车手 ' + (added+1));
+    var url = iAv >= 0 ? String(row[iAv]||'').trim() : '';
+    var pp = { id: nextId++, name: name, avatarSource: null, avatar: null, avatarDataUrl: '', avatarDiscUrl: '' };
+    participants.push(pp);
+    setDefaultAvatar(pp);                       // 先挂默认头像，远程图到了再替换
+    listEl.appendChild(buildCard(pp));
+    added++;
+    if (/^https?:\/\//i.test(url)){
+      loading++;
+      setRemoteAvatar(pp, url, function(ok){
+        finished++; if (!ok) failed++;
+        if (finished === loading){
+          toast('已导入 ' + added + ' 位参赛者：头像成功 ' + (loading-failed) + ' 张' + (failed ? '，失败 ' + failed + ' 张（用默认头像）' : ''));
+        }
+      });
+    }
+  }
+  csvStat = { added: added, avatars: loading, failed: 0 };
+  emptyEl.hidden = participants.length > 0;
+  updateCount();
+  updateHint();
+  renderList();
+  toast(loading ? ('已导入 ' + added + ' 位参赛者，正在加载 ' + loading + ' 张头像…') : ('已导入 ' + added + ' 位参赛者'));
+}
 function applyDefaultNames(){
   for (var i=0;i<participants.length;i++){
     var p = participants[i];
@@ -370,6 +431,44 @@ function loadBitmap(file){
     }
   });
 }
+// 把任意图源裁成圆形贴图（赛车用 canvas，卡片用另一份白底方形）
+function makeDisc(src, w, h){
+  var size = 192;
+  var c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  var g = c.getContext('2d');
+  var m = Math.min(w, h);
+  if (!(m > 0)) throw new Error('bad-size');
+  g.fillStyle = '#ffffff'; g.fillRect(0,0,size,size);
+  g.drawImage(src, (w-m)/2, (h-m)/2, m, m, 0, 0, size, size);
+  var disc = document.createElement('canvas');
+  disc.width = disc.height = size;
+  var dg = disc.getContext('2d');
+  dg.save();
+  dg.beginPath(); dg.arc(size/2, size/2, size/2 - 1, 0, TAU); dg.clip();
+  dg.drawImage(c, 0, 0);
+  dg.restore();
+  dg.beginPath(); dg.arc(size/2, size/2, size/2 - 4, 0, TAU);
+  dg.lineWidth = 6; dg.strokeStyle = 'rgba(20,22,26,0.9)'; dg.stroke();
+  return { disc: disc, flat: c };
+}
+// 远程头像（CSV 导入用）：不带 Referer 取图，失败就保持默认头像
+function setRemoteAvatar(p, url, done){
+  var im = new Image();
+  im.referrerPolicy = 'no-referrer';
+  im.onload = function(){
+    try {
+      p.avatarDisc = makeDisc(im, im.naturalWidth || 150, im.naturalHeight || 150).disc;
+      p.avatarDiscUrl = url;
+      p.avatarDataUrl = '';        // 清掉默认头像的 dataURL，否则卡片缩略图会用旧图盖住名单头像
+      p.avatarSource = 'remote';
+      syncCard(p);
+      if (done) done(true);
+    } catch (e){ if (done) done(false); }
+  };
+  im.onerror = function(){ if (done) done(false); };
+  im.src = url;
+}
 function applyUpload(p, file){
   if (!/^image\//i.test(file.type || '')){
     toast('请选择常见图片文件（JPG / PNG / WebP / GIF 等）');
@@ -383,26 +482,12 @@ function applyUpload(p, file){
   loadBitmap(file).then(function(src){
     try {
       var size = 192;
-      var c = document.createElement('canvas');
-      c.width = size; c.height = size;
-      var g = c.getContext('2d');
       var w = src.width || src.naturalWidth || size;
       var h = src.height || src.naturalHeight || size;
-      var m = Math.min(w,h);
-      if (!(m > 0)) throw new Error('bad-size');
-      g.fillStyle = '#ffffff'; g.fillRect(0,0,size,size);
-      g.drawImage(src, (w-m)/2, (h-m)/2, m, m, 0, 0, size, size);
-      var disc = document.createElement('canvas');
-      disc.width = disc.height = size;
-      var dg = disc.getContext('2d');
-      dg.save();
-      dg.beginPath(); dg.arc(size/2, size/2, size/2 - 1, 0, TAU); dg.clip();
-      dg.drawImage(c, 0, 0);
-      dg.restore();
-      dg.beginPath(); dg.arc(size/2, size/2, size/2 - 4, 0, TAU);
-      dg.lineWidth = 6; dg.strokeStyle = 'rgba(20,22,26,0.9)'; dg.stroke();
-      p.avatarDisc = disc;
-      p.avatarDataUrl = c.toDataURL('image/png');
+      var r = makeDisc(src, w, h);
+      p.avatarDisc = r.disc;
+      p.avatarDataUrl = r.flat.toDataURL('image/png');   // 本地文件不污染画布，可以导出 dataURL
+      p.avatarDiscUrl = '';
       p.avatarSource = 'upload';
       syncCard(p);
       toast('已设置头像：' + displayName(p));
@@ -1385,6 +1470,16 @@ function frame(now){
 document.getElementById('addBtn').addEventListener('click', function(){
   var p = addParticipant('');
   if (p && p.node) p.node.inp.focus();
+});
+document.getElementById('csvBtn').addEventListener('click', function(){ document.getElementById('csvInput').click(); });
+document.getElementById('csvInput').addEventListener('change', function(e){
+  var file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  var fr = new FileReader();
+  fr.onload = function(){ try { importCsvText(fr.result); } catch (err){ toast('CSV 解析失败：' + err.message); } };
+  fr.onerror = function(){ toast('读不到这个文件'); };
+  fr.readAsText(file, 'UTF-8');
 });
 document.getElementById('sampleBtn').addEventListener('click', function(){
   var names = ['阿波罗','闪电','赤兔','疾风','雷霆','星尘'];
