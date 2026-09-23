@@ -120,6 +120,7 @@ button{font:inherit}
 'use strict';
 
 var TAU = Math.PI * 2;
+var LANE_SPEED = 62;                         // 变道横移速度（世界单位/秒）：匀速并入，起步不甩、到位不蹭
 var CAR_W = 46;                              // 车身宽（含轮，世界单位）
 var CAR_LEN = 78;                            // 车长
 var MAX_OVERLAP = 0.5;                       // 允许的最大重叠面积占比（超过就横向让位）
@@ -714,7 +715,10 @@ function updateCar(c, dt, t, raceLen){
   if (t >= c.passUntil) c.lane = damp(c.lane, c.baseLane, 0.18, dt);
   var wob = 7 * Math.sin(t*0.62 + c.wobbleSeed*2.1);
   var target = clamp(c.lane + wob, -LANE_MAX, LANE_MAX);
-  var nl = damp(c.lateral, target, (t < c.passUntil ? 3.2 : 1.4), dt);   // 变道时横向并入更快
+  // 横移走匀速（线性）：原来用指数阻尼，起步瞬间横向速度能到 ~190 单位/秒，车头会先甩一下再蹭进车位
+  var dx = target - c.lateral;
+  var stepX = LANE_SPEED * dt;
+  var nl = Math.abs(dx) <= stepX ? target : c.lateral + (dx > 0 ? stepX : -stepX);
   var vn = (nl - c.lateral) / Math.max(dt, 1e-4);
   c.lateral = clamp(nl, -LANE_MAX, LANE_MAX);
   c.yaw = damp(c.yaw, clamp(Math.atan2(vn, Math.max(60, c.v)), -0.4, 0.4), 6, dt);
