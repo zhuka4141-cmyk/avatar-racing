@@ -101,7 +101,6 @@ button{font:inherit}
       <div id="hudSub" class="hud-sub"></div>
     </div>
     <button id="rankBtn" class="hud-btn" type="button" hidden>Standings</button>
-    <button id="backBtn" class="hud-btn" type="button">Setup</button>
   </div>
   <div id="countdown" class="countdown" hidden><i id="countdownText">3</i></div>
   <div id="result" class="result" hidden>
@@ -1676,7 +1675,10 @@ document.getElementById('sampleBtn').addEventListener('click', function(){
 document.getElementById('clearBtn').addEventListener('click', clearAll);
 document.getElementById('shuffleBtn').addEventListener('click', shuffleAll);
 document.getElementById('startBtn').addEventListener('click', startRace);
-document.getElementById('backBtn').addEventListener('click', backToSetup);
+// 返回设置：改成按 Esc（不再放按钮，也不加图标）
+document.addEventListener('keydown', function(e){
+  if ((e.key === 'Escape' || e.key === 'Esc') && race.phase !== 'setup') backToSetup();
+});
 document.getElementById('toSetupBtn').addEventListener('click', backToSetup);
 document.getElementById('againBtn').addEventListener('click', function(){ startRace(); });
 rankBtnEl.addEventListener('click', function(){ if (race.phase === 'ending') showResults(); });
