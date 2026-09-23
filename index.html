@@ -98,22 +98,22 @@ button{font:inherit}
   <canvas id="game"></canvas>
   <div class="hud">
     <div class="hud-panel">
-      <div id="hudStatus" class="hud-status">准备中</div>
+      <div id="hudStatus" class="hud-status">Ready</div>
       <div id="hudSub" class="hud-sub"></div>
     </div>
-    <button id="rankBtn" class="hud-btn" type="button" hidden>查看成绩</button>
-    <button id="backBtn" class="hud-btn" type="button">返回设置</button>
+    <button id="rankBtn" class="hud-btn" type="button" hidden>Standings</button>
+    <button id="backBtn" class="hud-btn" type="button">Setup</button>
   </div>
   <div id="countdown" class="countdown" hidden><i id="countdownText">3</i></div>
   <div id="hint" class="hint" hidden></div>
   <div id="result" class="result" hidden>
     <div class="result-card">
-      <h2>比赛结束</h2>
+      <h2>Race finished</h2>
       <div id="resultNote" class="result-note"></div>
       <div id="board" class="board"></div>
       <div class="result-actions">
-        <button id="againBtn" class="btn primary" type="button">再来一局</button>
-        <button id="toSetupBtn" class="btn ghost" type="button">返回设置</button>
+        <button id="againBtn" class="btn primary" type="button">Race again</button>
+        <button id="toSetupBtn" class="btn ghost" type="button">Setup</button>
       </div>
     </div>
   </div>
@@ -1504,14 +1504,14 @@ function updateHud(dt){
   var lead = race.ranked && race.ranked[0];
   var fin = 0;
   for (var i=0;i<race.cars.length;i++) if (race.cars[i].finished) fin++;
-  var st = '准备中', sub = '';
-  if (race.phase === 'countdown'){ st = '准备开始'; sub = '发车倒计时'; }
-  else if (race.phase === 'racing'){ st = '比赛中'; sub = (lead ? ('领先：' + displayName(lead.p)) : '比赛中') + ' · 已跑 ' + fmtTime(race.elapsed); }
-  else if (race.phase === 'waiting'){ st = '等待其他车辆冲线'; sub = '已冲线 ' + fin + '/' + race.cars.length + ' · 剩余 ' + Math.max(0, 5 - race.waitingElapsed).toFixed(1) + 's'; }
-  else if (race.phase === 'ending'){ st = '比赛结束'; sub = '车辆正在驶离赛道 · 已冲线 ' + fin + '/' + race.cars.length; }
+  var st = 'Ready', sub = '';
+  if (race.phase === 'countdown'){ st = 'Get ready'; sub = 'Engines starting'; }
+  else if (race.phase === 'racing'){ st = 'Racing'; sub = (lead ? ('Leader: ' + displayName(lead.p)) : 'Racing') + ' · elapsed ' + fmtTime(race.elapsed); }
+  else if (race.phase === 'waiting'){ st = 'Waiting for the rest'; sub = 'Finished ' + fin + '/' + race.cars.length + ' · ' + Math.max(0, 5 - race.waitingElapsed).toFixed(1) + 's left'; }
+  else if (race.phase === 'ending'){ st = 'Race over'; sub = 'Cars leaving the track · finished ' + fin + '/' + race.cars.length; }
   else if (race.phase === 'results'){
     var win = race.results && race.results.length ? race.results[0].name : '';
-    st = '比赛结束'; sub = (win ? ('冠军：' + win + ' · ') : '') + '可查看完整名次';
+    st = 'Race over'; sub = (win ? ('Winner: ' + win + ' · ') : '') + 'full standings available';
   }
   setText(hudStatus, 's', st);
   setText(hudSub, 'sub', sub);
@@ -1523,7 +1523,7 @@ function updateHint(){
   race.lowQ = false;
   if (n > 40){
     hintEl.hidden = false;
-    hintEl.textContent = '参赛者较多（' + n + ' 位），所有车辆均完整渲染；人数很多时车辆会相互重叠。';
+    hintEl.textContent = 'Lots of cars (' + n + '): every car is fully rendered, but they will overlap in traffic.';
   } else {
     hintEl.hidden = true;
   }
@@ -1533,7 +1533,7 @@ function showCountdownText(v){
   if (v > 2.9) txt = '3';
   else if (v > 1.9) txt = '2';
   else if (v > 0.9) txt = '1';
-  else txt = '开始';
+  else txt = 'GO';
   if (countdownText.textContent !== txt) countdownText.textContent = txt;
 }
 function showResults(){
@@ -1543,7 +1543,7 @@ function showResults(){
     if (i === 5){
       var sep = document.createElement('div');
       sep.className = 'board-sep';
-      sep.textContent = '第 6 名及以后（继续向下滑动）';
+      sep.textContent = '6th place and below (scroll down)';
       boardEl.appendChild(sep);
     }
     var c = list[i];
@@ -1553,14 +1553,14 @@ function showResults(){
     var img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer'; img.src = c.avatar || '';
     var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = c.name;
     var stt = document.createElement('span'); stt.className = 'st';
-    stt.textContent = c.finished ? ('完成 · ' + fmtTime(c.finishTime)) : ('进度 ' + Math.round(c.progress*100) + '%');
+    stt.textContent = c.finished ? ('Finished · ' + fmtTime(c.finishTime)) : ('Progress ' + Math.round(c.progress*100) + '%');
     row.appendChild(rank); row.appendChild(img); row.appendChild(nm); row.appendChild(stt);
     boardEl.appendChild(row);
   }
   boardEl.scrollTop = 0;
   resultNote.textContent = list.length > 5
-    ? ('前 5 名直接显示，向下滑动可查看全部 ' + list.length + ' 位参赛者')
-    : ('共 ' + list.length + ' 位参赛者');
+    ? ('Top 5 shown — scroll for all ' + list.length + ' participants')
+    : (list.length + ' participants');
   resultEl.hidden = false;
   race.phase = 'results';
 }
