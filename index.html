@@ -1365,15 +1365,17 @@ function drawAvatar(g, x, y, r, p){
   try { g.drawImage(p.avatarDisc, x-r, y-r, r*2, r*2); }
   catch (e) { /* 单张头像异常不影响整帧 */ }
 }
-var LABEL_FONT = '600 12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+var LABEL_FONT = '600 10px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';   // 名字字号（原 12px）
+var LABEL_PAD_X = 12;      // 文字两侧留白（原 16）
+var LABEL_H = 18;          // 胶囊高度（原 22）
 function labelWidth(g, text){
   g.font = LABEL_FONT;
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  return g.measureText(text).width + 16;
+  return g.measureText(text).width + LABEL_PAD_X;
 }
 function drawLabel(g, x, y, w, text){
   g.fillStyle = 'rgba(26,33,44,0.5)';        // 更透明：名字重叠时也能看见下面那层
-  rrect(g, x-w/2, y-11, w, 22, 11);
+  rrect(g, x-w/2, y - LABEL_H/2, w, LABEL_H, LABEL_H/2);
   g.fill();
   g.fillStyle = 'rgba(255,255,255,0.92)';
   g.fillText(text, x, y+0.5);
@@ -1462,7 +1464,7 @@ function render(dt){
     // 只要在画面内就一直显示名字：不再按「离镜头中心的距离」筛选，也没有 6 个的上限
     car.labelAlpha = damp(car.labelAlpha || 0, 1, 6, dt);
     if (car.labelAlpha > 0.05){
-      labels.push({ p: car.p, x: sp2.x, y: sp2.y - (r + 16), text: displayName(car.p), alpha: car.labelAlpha });
+      labels.push({ p: car.p, x: sp2.x, y: sp2.y - (r + 12), text: displayName(car.p), alpha: car.labelAlpha });
     }
   }
   // 名字只跟着自己的车走，不做任何让位/避让：位置 = 车头正上方，只保留「不出画面」的边界收拢。
