@@ -18,6 +18,7 @@ button{font:inherit}
 .wrap{max-width:720px;margin:0 auto;padding:22px 16px 150px}
 .head h1{font-size:24px;letter-spacing:.5px}
 .head .sub{margin-top:8px;color:#68727f;font-size:13px;line-height:1.65}
+.head .count{display:inline-block;margin-left:8px;padding:2px 10px;border-radius:999px;background:#e8f0fe;color:#2f6df6;font-size:13px;font-weight:700;vertical-align:middle;white-space:nowrap}
 .list{margin-top:18px;display:flex;flex-direction:column;gap:10px}
 .card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e7ee;border-radius:14px;padding:10px 12px;box-shadow:0 1px 2px rgba(20,30,50,.04)}
 .avatar{width:52px;height:52px;flex:0 0 52px;border-radius:50%;overflow:hidden;background:#f1f4f8;border:1px solid #dbe1e9}
@@ -72,7 +73,7 @@ button{font:inherit}
 <section id="setupView">
   <div class="wrap">
     <div class="head">
-      <h1>头像赛车</h1>
+      <h1>头像赛车<span id="countBadge" class="count">共 0 位参赛者</span></h1>
       <p class="sub">填写姓名并上传头像，点击“开始比赛”即可观看全自动头像赛车。至少需要 2 位参赛者；头像只在当前页面会话中使用，不会上传到任何服务器。</p>
     </div>
     <div id="list" class="list"></div>
@@ -81,6 +82,7 @@ button{font:inherit}
   <div class="actions">
     <button id="addBtn" class="btn" type="button">添加参赛者</button>
     <button id="sampleBtn" class="btn ghost" type="button">填入示例参赛者</button>
+    <button id="shuffleBtn" class="btn ghost" type="button">随机排序</button>
     <button id="clearBtn" class="btn danger" type="button">清空全部</button>
     <button id="startBtn" class="btn primary" type="button">开始比赛</button>
   </div>
@@ -118,12 +120,17 @@ button{font:inherit}
 'use strict';
 
 var TAU = Math.PI * 2;
-var HALF_W = 150;
+var CAR_W = 46;                              // 车身宽（含轮，世界单位）
+var CAR_LEN = 78;                            // 车长
+var MAX_OVERLAP = 0.5;                       // 允许的最大重叠面积占比（超过就横向让位）
+var LANES = 14;                              // 并排车位数量（赛道宽度由它决定）
+var LANE_STEP = 60;                          // 相邻车道中心间距（车身宽 46）
+var LANE_MAX = (LANES - 1) / 2 * LANE_STEP;  // 390：最外侧车位中心
+var HALF_W = LANE_MAX + 24;                  // 414：14 个车位 + 路缘
 var RACE_DIST = 9000;
 var FWD_RUNOFF = 1400;
-var LANE_MAX = HALF_W - 24;
 var VIEW_H = 820;
-var MIN_VIEW_W = 520;
+var MIN_VIEW_W = 2 * HALF_W + 140;           // 视野至少完整放下整条赛道
 var PALETTE = ['#f2994a','#eb5757','#2d9cdb','#27ae60','#9b51e0','#f2c94c','#56ccf2','#bb6bd9','#f2789f','#4ecdc4'];
 
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
@@ -168,6 +175,7 @@ var ctx = canvas.getContext('2d');
 ctx.imageSmoothingQuality = 'high';
 var hudStatus = document.getElementById('hudStatus');
 var hudSub = document.getElementById('hudSub');
+var countBadge = document.getElementById('countBadge');
 var countdownEl = document.getElementById('countdown');
 var countdownText = document.getElementById('countdownText');
 var hintEl = document.getElementById('hint');
@@ -271,12 +279,16 @@ function buildCard(p){
   syncCard(p);
   return card;
 }
+function updateCount(){
+  if (countBadge) countBadge.textContent = '共 ' + participants.length + ' 位参赛者';
+}
 function renderList(){
   listEl.innerHTML = '';
   for (var i=0;i<participants.length;i++){
     listEl.appendChild(participants[i].node ? participants[i].node.card : buildCard(participants[i]));
   }
   emptyEl.hidden = participants.length > 0;
+  updateCount();
 }
 function addParticipant(name){
   var p = { id: nextId++, name: name || '', avatarSource: null, avatar: null, avatarDataUrl: '' };
@@ -285,6 +297,7 @@ function addParticipant(name){
   var card = buildCard(p);
   listEl.appendChild(card);
   emptyEl.hidden = true;
+  updateCount();
   updateHint();
   return p;
 }
@@ -294,14 +307,34 @@ function removeParticipant(p){
   participants.splice(i,1);
   if (p.node && p.node.card.parentNode) p.node.card.parentNode.removeChild(p.node.card);
   emptyEl.hidden = participants.length > 0;
+  updateCount();
   updateHint();
 }
 function clearAll(){
   participants.length = 0;
+  gridOrder = null;
   listEl.innerHTML = '';
   emptyEl.hidden = false;
+  updateCount();
   updateHint();
   toast('已清空全部参赛者');
+}
+function shuffleAll(){
+  if (participants.length < 2){ toast('至少需要 2 位参赛者才能打乱顺序'); return; }
+  // Fisher-Yates：就地打乱，名单顺序同时决定了发车顺序
+  for (var i=participants.length-1;i>0;i--){
+    var j = Math.floor(Math.random()*(i+1));
+    var t = participants[i]; participants[i] = participants[j]; participants[j] = t;
+  }
+  // 发车格再独立抽一次签：名单顺序与格子位置是两次独立随机，谁站哪个格不可预测
+  gridOrder = [];
+  for (var k=0;k<participants.length;k++) gridOrder.push(k);
+  for (var m=gridOrder.length-1;m>0;m--){
+    var q = Math.floor(Math.random()*(m+1));
+    var t2 = gridOrder[m]; gridOrder[m] = gridOrder[q]; gridOrder[q] = t2;
+  }
+  renderList();
+  toast('名单和发车位置都已打乱');
 }
 function applyDefaultNames(){
   for (var i=0;i<participants.length;i++){
@@ -388,7 +421,7 @@ function applyUpload(p, file){
  * ------------------------------------------------------------------ */
 
 function gridPlan(n){
-  var cols = Math.max(1, Math.min(Math.max(1,n), Math.floor((2*(LANE_MAX - 4)) / 60) + 1));
+  var cols = Math.max(1, Math.min(Math.max(1,n), LANES));   // 最多 14 车一排
   var rows = Math.max(1, Math.ceil(Math.max(1,n) / cols));
   var spacing = 100; // 车长约 78；人数增加时延长起跑区，不压缩车距。
   return { cols: cols, rows: rows, spacing: spacing, depth: 70 + (rows - 1) * spacing + 140 };
@@ -396,7 +429,7 @@ function gridPlan(n){
 function buildTrack(seed, backRunoff){
   var L = RACE_DIST;
   var step = 6;                 // 中心线采样步长（世界单位）
-  for (var attempt=0; attempt<4; attempt++){
+  for (var attempt=0; attempt<6; attempt++){
     var rnd = mulberry32((seed + attempt*7919) >>> 0);
     var st = { x: 0, y: 0, theta: 0, pts: [] };
     // 以曲率函数 kf 前进 len：κ 积分得航向，再积分得位置
@@ -428,8 +461,10 @@ function buildTrack(seed, backRunoff){
     // 阶梯布局：直道（带一个完整正弦周期的缓弯，净转角 0）→ 半圆 U 型弯 → 直道 → ...
     // 每段直道都比上一段高出一个 pitch，pitch 远大于赛道宽度，因此各段永不重叠。
     while (total < L - 260 && guard++ < 40){
-      var legLen = Math.min(L - total, isFirst ? 1000 : (1250 + rnd()*900));
-      var swing = isFirst ? 0 : (55 + rnd()*70);   // 缓弯最大横向摆动（世界单位）
+      var legLen = Math.min(L - total, isFirst ? 1000 : (1150 + rnd()*750));
+      // 缓弯最大横向摆动：够弯但仍让曲率半径远大于半宽（赛道末端自检会复核）
+      var swingCap = Math.min(HALF_W*0.30, legLen*legLen/(105*HALF_W));
+      var swing = isFirst ? 0 : swingCap*(0.55 + rnd()*0.45);   // 世界单位
       var ph = rnd()*TAU;
       var base = st.theta;
       (function(sw, p2, bs){
@@ -444,7 +479,8 @@ function buildTrack(seed, backRunoff){
       })(swing, ph, base);
       total += legLen;
       isFirst = false;
-      var pitch = 780 + rnd()*240;      // 相邻直道的间距
+      // 相邻直道的间距：两个半宽 + 两侧摆动 + 安全缝，U 型弯半径才不至于让赛道带自己贴住
+      var pitch = 2*HALF_W + 2*HALF_W*0.30 + 180 + rnd()*200;
       var Rh = pitch/2;                 // U 型弯半径 = 间距的一半
       var turnLen = Math.PI*Rh;
       if (total + turnLen + 700 > L) break;   // 末尾留直道做终点线
@@ -479,7 +515,7 @@ function buildTrack(seed, backRunoff){
         if (ddx*ddx + ddy*ddy < need*need){ clash = true; break; }
       }
     }
-    if (minR > HALF_W*1.7 && !clash) return finishTrack(base, backRunoff, seed, minR, turnCount);
+    if (minR > HALF_W*1.35 && !clash) return finishTrack(base, backRunoff, seed, minR, turnCount);
   }
   var straight = [];
   for (var q3=0;q3<Math.round(L/step)+1;q3++) straight.push({ x:0, y: q3*step });
@@ -577,32 +613,39 @@ function rankCars(cars){
     return a.p.id - b.p.id;
   });
 }
+var gridOrder = null;   // 「随机排序」抽出的发车格签位（null = 按名单顺序）
 function createCars(track, rnd){
-  var baseSpeed = track.raceLen / 18.2;
+  var baseSpeed = track.raceLen / 21.5;   // 距离制追赶会让整体节奏偏快，基准同步放慢以保持冠军 ~19-20s
   var cars = participants.map(function(p){
     return {
       p: p, s: 0, v: 0, lateral: 0, yaw: 0, progress: 0,
       finished: false, finishTime: 0, broken: false,
-      baseSpeed: baseSpeed * (1 + (rnd()*2-1) * 0.05),
-      accel: 2.2 * (1 + (rnd()*2-1) * 0.12),
-      startDelay: rnd() * 0.35,
+      baseSpeed: baseSpeed * (1 + (rnd()*2-1) * 0.13),   // 静态车速差距 ±13%
+      accel: 2.2 * (1 + (rnd()*2-1) * 0.22),
+      startDelay: rnd() * 0.5,
       wobbleSeed: rnd() * TAU,
       paceSeed: rnd() * TAU,
       paceSeed2: rnd() * TAU,
       paceSeed3: rnd() * TAU,
       draft: 0, blocked: 0, follow: 1, gone: false, clear: true,
-      rank: 1, catchup: 1, surgeTimer: 0, surgeCooldown: 1 + rnd()*4, surgePower: 0,
+      rank: 1, lastRank: 1, catchup: 1,
+      boostTimer: 0, boostCooldown: 1 + rnd()*4, boostPower: 0,   // 第 6 名起的随机加速
+      settleTimer: 0, aheadGap: Infinity, aheadV: 0,              // 超过前车后的自动调速
+      passTimer: 0, passPower: 0.14,                              // 变道/穿过时的一脚加速
       finishBias: (rnd()*2-1) * 0.015,      // 终点段 ±1.5% 微偏置，避免完全同时冲线
-      lane: 0, baseLane: 0, passUntil: 0
+      lane: 0, baseLane: 0, passUntil: 0, laneCooldown: 2 + rnd()*5
     };
   });
   var n = cars.length;
   var grid = gridPlan(n);
-  var gridSpan = 2*(LANE_MAX - 4);
   for (var i=0;i<n;i++){
-    var col = i % grid.cols;
-    cars[i].lateral = grid.cols > 1 ? (col/(grid.cols-1) - 0.5) * gridSpan : 0;
-    cars[i].s = -70 - Math.floor(i/grid.cols) * grid.spacing;
+    // 发车格默认按名单顺序；点过「随机排序」后按抽签结果落位（车的位置也是一次独立随机）
+    var gi = (gridOrder && gridOrder.length === n) ? gridOrder[i] : i;
+    var col = gi % grid.cols;
+    // 车位居中排布、间距 = LANE_STEP，变道时一格格挪
+    var slot = col - (grid.cols - 1)/2;
+    cars[i].lateral = slot * LANE_STEP;
+    cars[i].s = -70 - Math.floor(gi/grid.cols) * grid.spacing;
     cars[i].lane = cars[i].lateral;
     cars[i].baseLane = cars[i].lane;
   }
@@ -614,35 +657,48 @@ function updateCar(c, dt, t, raceLen){
   if (c.finished){
     targetV = c.baseSpeed * 0.55;          // 冲线后减速巡航，一路驶出画面
   } else if (t >= c.startDelay){
-    var pace = 1 + 0.085*Math.sin(t*0.37 + c.paceSeed)
-                 + 0.05*Math.sin(t*0.93 + c.paceSeed2)
-                 + 0.035*Math.sin(t*0.21 + c.paceSeed3);
+    var pace = 1 + 0.12*Math.sin(t*0.37 + c.paceSeed)
+                 + 0.07*Math.sin(t*0.93 + c.paceSeed2)
+                 + 0.05*Math.sin(t*0.21 + c.paceSeed3);
     // ---- 追赶机制 ----
-    // 后车获得平滑追赶增益；冲刺开始后持续到结束，保留完成超车的速度优势。
+    // 后车获得平滑追赶增益；加速开始后持续到结束，保留完成超车的速度优势。
     var rank = c.rank || 1;
-    var total = race.cars.length;
     var gap = Math.max(0, (Number.isFinite(race.leaderS) ? race.leaderS : c.s) - c.s);
-    // 位置系数：第 1 名最慢（0.90），越靠后越快（最后一名 1.18）
-    var rf = total > 1 ? clamp((rank - 1) / (total - 1), 0, 1) : 0;
-    var posFactor = 0.90 + 0.28 * Math.pow(rf, 0.8);
-    // 落后 200 单位后逐渐补偿，最大额外 +12%，不直接改变里程。
-    var gapBoost = clamp((gap - 200) / 800, 0, 1) * 0.12;
-    // 第二名也可以冲刺；超到前面后不立刻刹车，减少名次在同一位置反复跳动。
-    if (c.surgeTimer > 0) c.surgeTimer -= dt;
-    c.surgeCooldown -= dt;
-    if (rank > 1 && c.surgeTimer <= 0 && c.surgeCooldown <= 0){
-      if (Math.random() < 0.55){
-        c.surgeTimer = 1.2 + Math.random()*2.4;      // 冲刺持续 1.2~3.6s
-        c.surgePower = 0.05 + Math.random()*0.07;    // +5%~12%
+    // 越靠后越快：按「落后领先者多少」连续给油。不按名次跳变 —— 按名次的话刚超到第一就会瞬间掉速，
+    // 车队会来回乒乓；领先者本身不加成，所以速度最高的永远是最后面那些车。
+    var gapBoost = clamp(gap / 900, 0, 1) * 0.45;      // 落后 900 单位 → +45%，之后不再增加
+    if (rank < c.lastRank) c.settleTimer = 1.2;      // 名次上升 = 刚超过对手 → 进入自动调速
+    c.lastRank = rank;
+    // 第 6 名及以后：随机加速；前五名不额外给加速度。
+    var boost = 0;
+    if (rank > 5){
+      if (c.boostTimer > 0) c.boostTimer -= dt;
+      c.boostCooldown -= dt;
+      if (c.boostTimer <= 0 && c.boostCooldown <= 0){
+        if (Math.random() < 0.7){
+          c.boostTimer = 1.0 + Math.random()*2.6;     // 加速持续 1.0~3.6s
+          c.boostPower = 0.05 + Math.random()*0.09;   // +5%~14%
+        }
+        c.boostCooldown = 1.2 + Math.random()*3.6;
       }
-      c.surgeCooldown = 2.0 + Math.random()*4.5;
+      boost = c.boostTimer > 0 ? c.boostPower : 0;
+      if (c.aheadGap < 90) boost *= clamp(c.aheadGap / 90, 0, 1);   // 快贴上前面那台就收油
+    } else {
+      c.boostTimer = 0; c.boostPower = 0;
     }
-    var surge = c.surgeTimer > 0 ? c.surgePower : 0;
-    var catchup = clamp(posFactor + gapBoost + surge, 0.80, 1.32);
+    // 超过对手后自动调速：加速淡出，并贴住前车速度，不让它一路狂飙。
+    if (c.settleTimer > 0){
+      c.settleTimer -= dt;
+      boost *= clamp(c.settleTimer / 1.2, 0, 1);
+    }
+    var catchup = clamp(1 + gapBoost + boost, 0.85, 1.9);
     var finishRamp = clamp((c.s - (raceLen - 1800)) / 1800, 0, 1);   // 保留中后段争夺，末段平滑淡出追赶。
     if (finishRamp > 0) catchup = lerp(catchup, 1 + c.finishBias, finishRamp);
     c.catchup = damp(c.catchup, catchup, 3, dt);
-    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * c.catchup;
+    // 变道/穿车时给一脚额外推力：要快速超过，不能并排磨蹭
+    if (c.passTimer > 0) c.passTimer -= dt;
+    var passBoost = c.passTimer > 0 ? c.passPower : 0;
+    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * c.catchup * (1 + passBoost);
   }
   if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel*dt));
   else c.v = 0;
@@ -658,19 +714,35 @@ function updateCar(c, dt, t, raceLen){
   if (t >= c.passUntil) c.lane = damp(c.lane, c.baseLane, 0.18, dt);
   var wob = 7 * Math.sin(t*0.62 + c.wobbleSeed*2.1);
   var target = clamp(c.lane + wob, -LANE_MAX, LANE_MAX);
-  var nl = damp(c.lateral, target, 1.4, dt);
+  var nl = damp(c.lateral, target, (t < c.passUntil ? 3.2 : 1.4), dt);   // 变道时横向并入更快
   var vn = (nl - c.lateral) / Math.max(dt, 1e-4);
   c.lateral = clamp(nl, -LANE_MAX, LANE_MAX);
   c.yaw = damp(c.yaw, clamp(Math.atan2(vn, Math.max(60, c.v)), -0.4, 0.4), 6, dt);
   c.progress = clamp(c.s / raceLen, 0, 1);
 }
 function planOvertakes(cars){
-  // 每 0.25 秒找一次空侧；保留目标 1.8 秒，避免左右来回抖动。
+  // 每 0.25 秒决策一次车道：能变道超车就先超，没机会时偶尔自己换个车道跑。
   if (race.elapsed < 0.7 || race.elapsed < (race.nextPassCheck || 0)) return;
   race.nextPassCheck = race.elapsed + 0.25;
+  var freeLane = function(c, lane){        // 目标车位 + 横穿走廊都要空（含正在切进来的车）
+    var lo = Math.min(c.lateral, lane) - CAR_W/2, hi = Math.max(c.lateral, lane) + CAR_W/2;
+    for (var k=0;k<cars.length;k++){
+      var o = cars[k];
+      if (o === c || o.broken || o.gone) continue;
+      if (Math.abs(o.s - c.s) > 50) continue;          // 只看身边这一小段，不要求整条车道空着
+      if (Math.abs(o.lateral - lane) < CAR_W) return false;
+      if (o.passUntil > race.elapsed && Math.abs(o.lane - lane) < CAR_W) return false;
+      // 走廊里有人就不横穿：否则会从别人车身上刮过去（重叠必然超 50%）
+      if (o.lateral > lo && o.lateral < hi) return false;
+      if (o.passUntil > race.elapsed && o.lane > lo && o.lane < hi) return false;
+    }
+    return true;
+  };
   for (var i=0;i<cars.length;i++){
     var c = cars[i];
-    if (c.finished || c.broken || c.gone || race.elapsed < c.passUntil) continue;
+    if (c.finished || c.broken || c.gone) continue;
+    c.laneCooldown -= 0.25;
+    if (race.elapsed < c.passUntil) continue;   // 正在变道，走完再决策
     var front = null, nearest = 220;
     for (var j=0;j<cars.length;j++){
       var other = cars[j], gap = other.s - c.s;
@@ -679,71 +751,125 @@ function planOvertakes(cars){
         front = other; nearest = gap;
       }
     }
-    if (!front || (c.v < front.v - 15 && nearest > 120)) continue;
-    var best = null, bestRoom = 0;
-    for (var side=-1;side<=1;side+=2){
-      var lane = c.lateral + side*64;
-      if (Math.abs(lane) > LANE_MAX - 4) continue;
-      var room = 250;
-      for (var k=0;k<cars.length;k++){
-        var o = cars[k], ds = o.s-c.s;
-        if (o === c || o.broken || o.gone || ds < -100 || ds > 220) continue;
-        // 同时检查目标车道与正在切入的车，避免同时抢同一个空隙。
-        if (Math.abs(o.lateral-lane) < 52 || (o.passUntil > race.elapsed && Math.abs(o.lane-lane) < 52)){
-          room = Math.min(room, Math.abs(ds));
+    if (front && !(c.v < front.v - 15 && nearest > 120)){
+      // 变道超车：往空的一侧挪一个车位
+      var best = null, bestRoom = 0;
+      for (var side=-1;side<=1;side+=2){
+        var lane = c.lateral + side*LANE_STEP;
+        if (Math.abs(lane) > LANE_MAX - 4) continue;
+        var room = 250;
+        for (var k2=0;k2<cars.length;k2++){
+          var o2 = cars[k2], ds2 = o2.s-c.s;
+          if (o2 === c || o2.broken || o2.gone || ds2 < -100 || ds2 > 220) continue;
+          // 同时检查目标车道与正在切入的车，避免同时抢同一个空隙。
+          if (Math.abs(o2.lateral-lane) < 52 || (o2.passUntil > race.elapsed && Math.abs(o2.lane-lane) < 52)){
+            room = Math.min(room, Math.abs(ds2));
+          }
         }
+        if (room > 105 && room > bestRoom){ best = lane; bestRoom = room; }
       }
-      if (room > 105 && room > bestRoom){ best = lane; bestRoom = room; }
+      if (best !== null && freeLane(c, best)){ c.lane = best; c.passUntil = race.elapsed + 1.8; c.passTimer = Math.max(c.passTimer, 0.9); c.passPower = 0.20; continue; }
     }
-    if (best !== null){ c.lane = best; c.passUntil = race.elapsed + 1.8; }
+    // 随机变道：没人挡路时也会换个车道，之后新车位就是它的巡航车道
+    if (c.laneCooldown <= 0){
+      var step = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random()*3));
+      var slot = clamp(Math.round(c.lateral / LANE_STEP) + step, -(LANES-1)/2, (LANES-1)/2);
+      var target = slot * LANE_STEP;
+      if (Math.abs(target - c.lateral) > 20 && freeLane(c, target)){
+        c.lane = target; c.baseLane = target;
+        c.passUntil = race.elapsed + 1.0 + Math.random()*1.0;
+        c.laneCooldown = 1.2 + Math.random()*2.0;   // 车多时也要换得动道：别把决策饿死在冷却里
+      } else {
+        c.laneCooldown = 0.8;
+      }
+    }
   }
 }
+var sIdx = [];            // 按 s 排序的车（复用数组，避免每帧分配）
+function sortByS(cars){   // 逐对处理只看纵向邻居，车辆多少都不再退化
+  var a = sIdx; a.length = 0;
+  for (var i=0;i<cars.length;i++){ var c = cars[i]; if (!c.broken && !c.gone) a.push(c); }
+  a.sort(function(x,y){ return x.s - y.s; });
+  return a;
+}
 function interact(cars, dt){
+  // 车辆之间不碰撞、可以直接穿过去：这里不做刹车、也不做推开。
+  // 唯一约束是「两车重叠面积不超过车身的 MAX_OVERLAP」，超了才横向让位。
+  // 注意：这里没有车辆数上限 —— 变道与超车在多少台下都要照常发生。
   var n = cars.length;
-  for (var q=0;q<n;q++){ cars[q].draft = 0; cars[q].blocked = 0; cars[q].follow = 1; cars[q].clear = true; }
-  if (n > 120) return;                    // 车特别多时不再做逐对处理（此时允许重叠）
+  for (var q=0;q<n;q++){ cars[q].draft = 0; cars[q].follow = 1; cars[q].aheadGap = Infinity; cars[q].aheadV = 0; }
   planOvertakes(cars);
-  var GAP = 52;                           // 车身宽 46：横向拉开到 52 以上才算不重叠
-  var RANGE = 130;                        // 纵向关注范围
-  for (var i=0;i<n;i++){
-    var a = cars[i]; if (a.broken || a.gone) continue;
-    for (var j=i+1;j<n;j++){
-      var b = cars[j]; if (b.broken || b.gone) continue;
-      var ds = a.s - b.s;
-      var ads = ds < 0 ? -ds : ds;
-      if (ads > RANGE) continue;
-      a.clear = false; b.clear = false;
-      var ahead  = ds > 0 ? a : b;
-      var behind = ds > 0 ? b : a;
+  var srt = sortByS(cars), m = srt.length;
+  for (var i=0;i<m;i++){
+    var a = srt[i];                       // 排序后：a 在后、b 在前
+    for (var j=i+1;j<m;j++){
+      var b = srt[j];
+      var ads = b.s - a.s;
+      if (ads >= 230) break;              // 后面只会更远
       var dl = a.lateral - b.lateral;
       var adl = dl < 0 ? -dl : dl;
+      if (ads > 20 && adl < 40){          // 同车道最近的真前车：随机加速收油的依据
+        if (ads < a.aheadGap){ a.aheadGap = ads; a.aheadV = b.v; }
+      }
       if (ads > 20 && ads < 120){
-        // 尾流只在斜后方有效（含一点点"抽头"窗口），正后方是乱流 —— 逼出"拉开-抽头-超越"
-        if (adl >= 26 && adl < 62) behind.draft += 0.09;
-        else if (adl < 26) behind.draft -= 0.03;
-        ahead.draft -= 0.04;
+        // 尾流只在斜后方有效（含一点点"抽头"窗口），正后方是乱流
+        if (adl >= 26 && adl < 62) a.draft += 0.09;
+        else if (adl < 26) a.draft -= 0.03;
+        b.draft -= 0.04;
       }
-      if (ads > 20 && adl < 32){            // 并排车辆不互相刹车；只对真正的前车限速。
-        var cap = clamp((ads - 52) / 42, 0, 1);
-        behind.follow = Math.min(behind.follow, cap);
-      }
-      if (ads < 86 && adl < GAP){          // 只有车身纵向接近时才推开；不要搅乱前后排发车。
-        var dir = dl >= 0 ? 1 : -1;
-        if (adl < 0.01) dir = (i % 2 === 0) ? 1 : -1;
-        var push = (GAP - adl) * 2.4 * dt * dir * 0.5;
-        a.lateral = clamp(a.lateral + push, -LANE_MAX, LANE_MAX);
-        b.lateral = clamp(b.lateral - push, -LANE_MAX, LANE_MAX);
-        // 关键：巡航线位跟着一起挪，否则"回到原车道"的阻尼会把两车又拉回重叠位置
-        a.lane = clamp(a.lane + push*0.7, -LANE_MAX, LANE_MAX);
-        b.lane = clamp(b.lane - push*0.7, -LANE_MAX, LANE_MAX);
+      if (ads > 20 && ads < 130 && adl < CAR_W && a.v >= b.v * 1.02){
+        // 确实在逼近前车 → 持续供一脚力，超车必须干脆，不允许并排磨蹭
+        a.passTimer = 0.5; a.passPower = 0.20;
       }
     }
   }
+  separateOverlap(cars, dt, false);
   for (var z=0;z<n;z++){
     cars[z].draft = clamp(cars[z].draft, -0.09, 0.13);
-    cars[z].blocked = clamp(cars[z].blocked, 0, 1);
-    cars[z].follow = clamp(cars[z].follow, 0.45, 1);
+    cars[z].follow = 1;
   }
+}
+// 重叠面积上限：两车横向至少要让到多远（ads = 纵向距离，越小要求越大）
+function overlapNeed(ads){
+  return CAR_W * (1 - MAX_OVERLAP * CAR_LEN / (CAR_LEN - ads)) + 3;   // 留 3 单位余量
+}
+var overlapScratch = [];                      // 复用数组，避免每帧分配
+// instant=false：逐帧柔性让位（看起来像自然避让）；instant=true：一帧内直接达标（防叠加）
+// 返回本帧修正过的对数，0 表示没有违反。按 s 排序后用滑动窗口，只比纵向 78 单位内的邻居。
+function separateOverlap(cars, dt, instant){
+  var n = cars.length;
+  // 没有车辆数上限：车再多也做重叠兜底（密集到物理上排不下时只是尽力而为）
+  var idx = overlapScratch;
+  idx.length = 0;
+  for (var q=0;q<n;q++){ var cq = cars[q]; if (!cq.broken && !cq.gone) idx.push(cq); }
+  idx.sort(function(x,y){ return x.s - y.s; });
+  var fixed = 0, m = idx.length;
+  for (var i=0;i<m;i++){
+    var a = idx[i];
+    for (var j=i+1;j<m;j++){
+      var b = idx[j];
+      var ads = b.s - a.s;
+      if (ads >= CAR_LEN) break;
+      var need = overlapNeed(ads);
+      var dl = a.lateral - b.lateral, adl = dl < 0 ? -dl : dl;
+      if (adl >= need) continue;
+      var dir = dl >= 0 ? 1 : -1;
+      if (adl < 0.01) dir = (i % 2 === 0) ? 1 : -1;
+      if (instant){
+        var half = (need - adl) / 2;
+        a.lateral = clamp(a.lateral + dir * half, -LANE_MAX, LANE_MAX);
+        b.lateral = clamp(b.lateral - dir * half, -LANE_MAX, LANE_MAX);
+      } else {
+        var move = Math.min(need - adl, CAR_W) * clamp(dt * 7, 0, 1);
+        a.lateral = clamp(a.lateral + dir * move, -LANE_MAX, LANE_MAX);
+        b.lateral = clamp(b.lateral - dir * move, -LANE_MAX, LANE_MAX);
+        // 正在穿过的那台（后车）加一脚，快速通过而不是并排磨蹭
+        if (b.v >= a.v * 0.98){ b.passTimer = 0.9; b.passPower = 0.20; }
+      }
+      fixed++;
+    }
+  }
+  return fixed;
 }
 function updateCamera(dt){
   var racing = (race.phase === 'racing' || race.phase === 'countdown' || race.phase === 'setup');
@@ -777,6 +903,8 @@ function updateRace(dt){
     try { updateCar(cars[i], dt, t, raceLen); }
     catch (e) { cars[i].broken = true; }
   }
+  // 位置推进后必须重新兜底：横向阻尼可能又把两车拉近，重叠绝不允许超过 50%
+  try { for (var rp=0; rp<2; rp++){ if (!separateOverlap(cars, dt, true)) break; } } catch (e1) {}
   race.ranked = rankCars(cars);
   for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
 
@@ -1035,60 +1163,61 @@ function render(dt){
 
   // 屏幕空间：头像与姓名标签（避免镜像/旋转影响文字）
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  var nowMs = (window.performance && performance.now) ? performance.now() : Date.now();
-  var leaderId = race.ranked.length ? race.ranked[0].p.id : -1;
   var labels = [];
   var ccx = W/2, ccy = H*race.focusY;
-  var labelR = Math.min(W,H) * 0.34;
-  var LABEL_MAX = 6;
+  ctx.font = LABEL_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (var m=0;m<list.length;m++){
     var car = list[m];
     if (car.broken) continue;
     var wpos = carWorld(car);
     var sp2 = worldToScreen(wpos.x, wpos.y);
-    if (sp2.x < -60 || sp2.x > W+60 || sp2.y < -60 || sp2.y > H+60){ car.labelAlpha = 0; continue; }
+    if (sp2.x < -80 || sp2.x > W+80 || sp2.y < -80 || sp2.y > H+80){
+      car.labelAlpha = damp(car.labelAlpha || 0, 0, 6, dt);   // 只有驶出画面才淡出
+      continue;
+    }
     var r = 11 * scale;
     var dx = sp2.x - ccx, dy = sp2.y - ccy;
     var distC = Math.sqrt(dx*dx + dy*dy);
     var cockpit = worldToScreen(wpos.x + Math.cos(wpos.ang)*1.5, wpos.y + Math.sin(wpos.ang)*1.5);
     drawAvatar(ctx, cockpit.x, cockpit.y, r, car.p);
-    // 标签只按"离镜头中心的距离"判定：名次每秒变动十几次，用名次当判据必然闪烁。
-    // 距离是连续量，再加 2 秒保持时间；显示/隐藏再走一次淡入淡出，彻底不会"啪"地跳出来。
-    if (distC < labelR) car.labelUntil = nowMs + 2000;
-    var shown = (car.labelUntil || 0) > nowMs;
-    car.labelAlpha = damp(car.labelAlpha || 0, shown ? 1 : 0, 12, dt);
+    // 只要在画面内就一直显示名字：不再按「离镜头中心的距离」筛选，也没有 6 个的上限
+    car.labelAlpha = damp(car.labelAlpha || 0, 1, 6, dt);
     if (car.labelAlpha > 0.05){
-      var sameName = 0;
-      for (var t2=0;t2<m;t2++){
-        var oc = list[t2];
-        if (oc && oc.p.id !== car.p.id && displayName(oc.p) === displayName(car.p)) sameName++;
-      }
-      labels.push({ x: sp2.x, y: sp2.y - (r + 16), text: displayName(car.p),
-                    alpha: car.labelAlpha,
-                    pri: distC + car.p.id * 0.001 + sameName * 6 });
+      labels.push({ p: car.p, x: sp2.x, y: sp2.y - (r + 16), text: displayName(car.p), alpha: car.labelAlpha });
     }
   }
-  // 按距离排序 + id 稳定破平局；名次一变去重顺序就整批换位，所以不能按名次排
-  labels.sort(function(a,b){ return a.pri - b.pri; });
-  if (labels.length > LABEL_MAX) labels = labels.slice(0, LABEL_MAX);
+  // 固定按 id 排序摆放：顺序若随镜头距离变，每帧「谁先占位」都不同，名字就会跳格
+  labels.sort(function(a,b){ return a.p.id - b.p.id; });
   race.labelNames = [];
   var placed = [];
   for (var L=0;L<labels.length;L++){
     var it = labels[L];
-    if (it.x < 42 || it.x > W-42){ it.alpha = 0; continue; }
-    var lw = labelWidth(ctx, it.text);
-    var ly = Math.max(22, it.y);
-    var bx = it.x - lw/2, by = ly - 11;
-    var clash = false;
-    for (var z=0;z<placed.length;z++){
-      var o = placed[z];
-      if (bx < o.x + o.w + 4 && bx + lw + 4 > o.x && by < o.y + o.h + 2 && by + 24 > o.y){ clash = true; break; }
+    var txt = it.text;
+    var p0 = it.p;    // 宽度与让位偏移都缓存在参赛者上
+    if (p0.labelW === undefined || p0.labelWName !== txt){ p0.labelW = labelWidth(ctx, txt); p0.labelWName = txt; }
+    var lw = p0.labelW;
+    // 贴边的名字不再丢弃，改成把标签整体推回画面内
+    var cx = Math.min(Math.max(it.x, lw/2 + 4), W - lw/2 - 4);
+    var baseY = Math.min(Math.max(it.y, 22), H - 22);
+    var ly = baseY;
+    // 重叠也不再隐藏：上下推移找空位；实在挤不下也照画 —— 所有人都必须看得见名字
+    for (var tr=0; tr<6; tr++){
+      var bx = cx - lw/2, by = ly - 11, clash = false;
+      for (var z=0;z<placed.length;z++){
+        var o = placed[z];
+        if (bx < o.x + o.w + 4 && bx + lw + 4 > o.x && by < o.y + o.h + 2 && by + 24 > o.y){ clash = true; break; }
+      }
+      if (!clash) break;
+      var step = Math.ceil((tr + 1) / 2) * 20;
+      ly = Math.min(Math.max(baseY + (tr % 2 === 0 ? -step : step), 22), H - 22);
     }
-    if (clash){ it.alpha = 0; continue; }
-    placed.push({ x: bx, y: by, w: lw, h: 22, alc: it });
-    race.labelNames.push(it.text);
+    // 让位偏移走阻尼：目标格子变了也是滑过去，不会「啪」地跳一帧
+    p0.labelDy = damp(p0.labelDy === undefined ? (ly - baseY) : p0.labelDy, ly - baseY, 8, dt);
+    var drawY = Math.min(Math.max(baseY + p0.labelDy, 22), H - 22);
+    placed.push({ x: cx - lw/2, y: drawY - 11, w: lw, h: 22 });
+    race.labelNames.push(txt);
     ctx.globalAlpha = it.alpha;
-    drawLabel(ctx, it.x, ly, lw, it.text);
+    drawLabel(ctx, cx, drawY, lw, txt);
     ctx.globalAlpha = 1;
   }
 }
@@ -1279,6 +1408,7 @@ document.getElementById('sampleBtn').addEventListener('click', function(){
   if (added) toast('已添加 ' + added + ' 位示例参赛者，可点击头像上传自定义图片');
 });
 document.getElementById('clearBtn').addEventListener('click', clearAll);
+document.getElementById('shuffleBtn').addEventListener('click', shuffleAll);
 document.getElementById('startBtn').addEventListener('click', startRace);
 document.getElementById('backBtn').addEventListener('click', backToSetup);
 document.getElementById('toSetupBtn').addEventListener('click', backToSetup);
