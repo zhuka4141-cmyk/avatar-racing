@@ -1,6 +1,6 @@
 ﻿# 同步 Instagram 粉丝名单到网站：头像下载 + 内置名单更新 + 可选提交推送
 #   tools\fetch-avatars.cmd                          # 双击：自动用 Downloads 里最新的粉丝 CSV，同步并推送
-#   tools\fetch-avatars.cmd D:\xx.csv               # 指定 CSV
+#   tools\fetch-avatars.cmd D:\xx.xlsx              # 指定 CSV / xlsx（导出工具的 xlsx 可直接用）
 #   tools\fetch-avatars.cmd D:\xx.csv -NoPush       # 只同步不提交
 param(
   [string]$Csv = "",
@@ -15,23 +15,79 @@ $repo = if ($RepoRoot) { $RepoRoot } else { Split-Path -Parent $PSScriptRoot }
 if (-not $OutDir) { $OutDir = Join-Path $repo "avatars" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-# ---- 1) 找 CSV ----
+# ---- 0.5) xlsx 读取（导出工具直接给 xlsx，不用先转 CSV）----
+function Text-Of($node) {
+  if ($null -eq $node) { return "" }
+  if ($node -is [string]) { return $node }
+  if ($node.'#text') { return [string]$node.'#text' }
+  $out = ""
+  foreach ($r in $node.r) { $out += (Text-Of $r.t) }
+  return $out
+}
+function Read-XlsxRows([string]$FilePath) {
+  $dir = Join-Path $env:TEMP ("xlsx_" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  try {
+    Copy-Item -LiteralPath $FilePath -Destination (Join-Path $dir "book.zip") -Force
+    Expand-Archive -LiteralPath (Join-Path $dir "book.zip") -DestinationPath (Join-Path $dir "x") -Force
+    $base = Join-Path $dir "x"
+    $shared = New-Object System.Collections.ArrayList
+    $ssPath = Join-Path $base "xl\sharedStrings.xml"
+    if (Test-Path -LiteralPath $ssPath) {
+      [xml]$doc = Get-Content -LiteralPath $ssPath -Raw -Encoding UTF8
+      foreach ($si in $doc.sst.si) { [void]$shared.Add((Text-Of $si)) }
+    }
+    [xml]$sheet = Get-Content -LiteralPath (Join-Path $base "xl\worksheets\sheet1.xml") -Raw -Encoding UTF8
+    $table = New-Object System.Collections.ArrayList
+    foreach ($row in $sheet.worksheet.sheetData.row) {
+      $vals = @{}; $max = 0
+      foreach ($cell in $row.c) {
+        $letters = ($cell.r -replace "[0-9]", ""); $idx = 0
+        foreach ($ch in $letters.ToCharArray()) { $idx = $idx * 26 + ([int][char]$ch - 64) }
+        if ($idx -gt $max) { $max = $idx }
+        $type = [string]$cell.t
+        if ($type -eq "inlineStr") { $v = Text-Of $cell.is }
+        elseif ($type -eq "s") { $v = [string]$shared[[int]$cell.v] }
+        else { $v = [string]$cell.v }
+        $vals[$idx] = $v
+      }
+      $arr = @()
+      for ($i = 1; $i -le $max; $i++) { $arr += $(if ($vals.ContainsKey($i)) { $vals[$i] } else { "" }) }
+      if (($arr -join "").Trim()) { [void]$table.Add($arr) }
+    }
+  } finally { Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue }
+  if ($table.Count -lt 2) { throw ("xlsx 没有数据行：" + $FilePath) }
+  $header = $table[0]
+  $rows = @()
+  for ($i = 1; $i -lt $table.Count; $i++) {
+    $o = [ordered]@{}
+    for ($j = 0; $j -lt $header.Count; $j++) {
+      $name = ([string]$header[$j]).Trim()
+      if (-not $name) { $name = "col" + ($j + 1) }
+      if ($o.Contains($name)) { $name = $name + "_" + ($j + 1) }
+      $o[$name] = [string]$table[$i][$j]
+    }
+    $rows += [pscustomobject]$o
+  }
+  return ,$rows
+}
+# ---- 1) 找名单文件 ----
 if (-not $Csv) {
   $cands = @(Get-ChildItem -LiteralPath $From -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match "(?i)(follower|following|igfollow)" -and $_.Name -match "(?i)\.csv$" } |
+    Where-Object { $_.Name -match "(?i)(follower|following|igfollow)" -and $_.Name -match "(?i)\.(csv|xlsx)$" } |
     Sort-Object LastWriteTime -Descending)
-  if ($cands.Count -eq 0) { throw "在 $From 里没找到粉丝导出 CSV（文件名含 follower / IGFollow）。也可以直接给路径：fetch-avatars.cmd D:\xx.csv" }
+  if ($cands.Count -eq 0) { throw "在 $From 里没找到粉丝导出文件（文件名含 follower / IGFollow，.csv 或 .xlsx 都行）。也可以直接给路径：fetch-avatars.cmd D:\xx.xlsx" }
   $Csv = $cands[0].FullName
 }
 $path = (Resolve-Path -LiteralPath $Csv).Path
-Write-Host ("用的 CSV：" + $path) -ForegroundColor Cyan
-$rows = @(Import-Csv -LiteralPath $path)
+Write-Host ("用的名单文件：" + $path) -ForegroundColor Cyan
+$rows = if ([System.IO.Path]::GetExtension($path) -match "(?i)^\.xlsx$") { Read-XlsxRows $path } else { @(Import-Csv -LiteralPath $path) }
 if ($rows.Count -eq 0) { throw "CSV 没有数据行：$path" }
 $props = $rows[0].PSObject.Properties.Name
 $uCol = $props | Where-Object { $_ -match "^(username|user name)$" } | Select-Object -First 1
 $nCol = $props | Where-Object { $_ -match "^(fullname|full name|name)$" } | Select-Object -First 1
-$aCol = $props | Where-Object { $_ -match "^(avatar\s*url|avatar|头像)$" } | Select-Object -First 1
-$pCol = $props | Where-Object { $_ -match "^(profile\s*url|profile)$" } | Select-Object -First 1
+$aCol = $props | Where-Object { $_ -match "(?i)^(avatar(\s*(url|pic|image|link))?|profile\s*pic|头像)$" } | Select-Object -First 1
+$pCol = $props | Where-Object { $_ -match "(?i)^(profile(\s*(url|link))?|主页|主页链接)$" } | Select-Object -First 1
 if (-not $uCol) { throw ("找不到 Username 列。现有列：" + ($props -join ", ")) }
 if (-not $aCol) { Write-Host "注意：没有 Avatar URL 列 —— 只更新名单，不下载头像" -ForegroundColor Yellow }
 
@@ -118,6 +174,7 @@ if ($desk -and (Test-Path -LiteralPath $desk)) {
   $out = @("Fullname,Username,Avatar URL,Profile URL,Local Avatar")
   foreach ($r in $rows) {
     $un = ([string]$r.$uCol).Trim()
+    if ($un -notmatch "^[A-Za-z0-9._-]{1,40}$") { continue }
     $nm = if ($nCol) { ([string]$r.$nCol).Trim() } else { "" }
     if (-not $nm) { $nm = $un }
     $av = if ($aCol) { ([string]$r.$aCol).Trim() } else { "" }
