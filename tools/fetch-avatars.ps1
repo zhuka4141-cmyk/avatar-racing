@@ -109,7 +109,6 @@ if (-not $NoRoster) {
 
 Write-Host ("头像：" + $ok + " 张下载，" + $fail.Count + " 张失败，" + $skip + " 行跳过") -ForegroundColor Green
 Write-Host ($rosterMsg) -ForegroundColor Green
-if ($deskMsg) { Write-Host $deskMsg -ForegroundColor Green }
 if ($fail.Count) { Write-Host ("失败用户：" + ($fail -join ", ")) -ForegroundColor Yellow }
 
 # ---- 3.5) 顺手刷新桌面上的名册 CSV（可直接拖进游戏页导入）----
@@ -129,6 +128,7 @@ if ($desk -and (Test-Path -LiteralPath $desk)) {
   [System.IO.File]::WriteAllText($target, (($out -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding($true)))
   $deskMsg = ("桌面名册已刷新：" + $target + "（" + ($out.Count - 1) + " 位）")
 }
+Write-Host ($deskMsg) -ForegroundColor Green
 
 # ---- 4) 提交推送 ----
 if ($Push) {
