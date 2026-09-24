@@ -63,20 +63,20 @@ results --再来一局--> countdown（保留参赛者资料，重建赛道/种�
   因为远程图没有 CORS 头，**赛车头像用 canvas 圆盘绘制**（跨域污染只影响像素读取，不影响 `drawImage`），**卡片缩略图直接用图片地址**（污染的画布不能 `toDataURL`）；
   单张图三级全失败也只影响那一行。注意 `avatars/` 里的文件名就是用户名，其中 6 个以 `_` 开头 —— 靠仓库根的 `.nojekyll` 才能在 GitHub Pages 上正常访问。
 
-### 以后更新名单（自己就能做，不用找人）
+### 以后更新名单（一条命令，不用找人）
 
-1. **立刻可用**：打开游戏页 →「导入 CSV 名单」→ 选新的导出文件。头像优先用仓库里的 `avatars/<用户名>.jpg`，没有的自动回退到 CSV 里的远程地址。
-2. **想把新头像也存进仓库**（不依赖 Instagram、不会过期、也不怕扩展拦截）：
+**双击 / 直接跑** `tools\fetch-avatars.cmd`（在本目录开终端则 ``.\tools\fetch-avatars.cmd`））：
 
-   ```powershell
-   cd C:\Users\lstcstudent\OneDrive\Desktop\deeepseek\avatar-racing
-   .\tools\fetch-avatars.cmd C:\路径\IGFollow_xxx.csv -Push
-   ```
+1. 自动在「下载 / Downloads」里找**最新**那份粉丝导出 CSV（文件名含 `follower` / `IGFollow`）；也可指定：`fetch-avatars.cmd D:\xx.csv`
+2. 下载全部头像到 `avatars/<用户名>.jpg` —— 先下到临时文件、**成功才覆盖**，失败绝不动已有文件
+3. 同步更新 `index.html` 里「载入粉丝名单」按钮用的内置名单（按行定位替换，可反复运行）
+4. 自动 `git add` + `commit` + `push`，GitHub Pages 约 1 分钟更新；**没有变化时不会产生空提交**
 
-   脚本按用户名下载到 `avatars/<用户名>.jpg`（文件名必须 = 用户名，页面就是按这个找图的），随后自动 `git commit` + `git push`，线上约 1 分钟生效。
-   实测：拿 135 行的导出文件跑，**135 成功 / 0 失败**，文件名与仓库现有集合完全一致。
+加 `-NoPush` 只同步不提交。实测：135 行导出文件 → **135 张全部成功 / 0 失败**；连跑两次第二次报「内置名单无变化」；生成结果与手工维护版本逐字节一致（含 `&` 等字符）。
 
-   用 `.cmd` 而不是直接跑 `.ps1`，是因为 Windows 默认执行策略会拦 `.ps1`；`.ps1` 本身带 UTF-8 BOM，中文提示不会乱码。
+**只想临时用一次**：游戏页「导入 CSV 名单」→ 头像优先取 `avatars/<用户名>.jpg`，缺的自动回退 CSV 里的远程地址，再缺用彩色首字母默认头像。
+
+> 两个坑记一下：① 用 `.cmd` 而不是直接跑 `.ps1`（Windows 默认执行策略会拦 `.ps1`）；② `.ps1` 必须带 **UTF-8 BOM**，否则中文提示变乱码、脚本直接语法报错 —— 用编辑器改它时别把 BOM 弄丢。
 
 
 ### 赛道生成（阶梯布局 + 真 U 型弯）
