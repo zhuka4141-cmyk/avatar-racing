@@ -31,6 +31,7 @@ $props = $rows[0].PSObject.Properties.Name
 $uCol = $props | Where-Object { $_ -match "^(username|user name)$" } | Select-Object -First 1
 $nCol = $props | Where-Object { $_ -match "^(fullname|full name|name)$" } | Select-Object -First 1
 $aCol = $props | Where-Object { $_ -match "^(avatar\s*url|avatar|头像)$" } | Select-Object -First 1
+$pCol = $props | Where-Object { $_ -match "^(profile\s*url|profile)$" } | Select-Object -First 1
 if (-not $uCol) { throw ("找不到 Username 列。现有列：" + ($props -join ", ")) }
 if (-not $aCol) { Write-Host "注意：没有 Avatar URL 列 —— 只更新名单，不下载头像" -ForegroundColor Yellow }
 
@@ -108,7 +109,26 @@ if (-not $NoRoster) {
 
 Write-Host ("头像：" + $ok + " 张下载，" + $fail.Count + " 张失败，" + $skip + " 行跳过") -ForegroundColor Green
 Write-Host ($rosterMsg) -ForegroundColor Green
+if ($deskMsg) { Write-Host $deskMsg -ForegroundColor Green }
 if ($fail.Count) { Write-Host ("失败用户：" + ($fail -join ", ")) -ForegroundColor Yellow }
+
+# ---- 3.5) 顺手刷新桌面上的名册 CSV（可直接拖进游戏页导入）----
+$deskMsg = "未处理"
+$desk = [Environment]::GetFolderPath("Desktop")
+if ($desk -and (Test-Path -LiteralPath $desk)) {
+  $out = @("Fullname,Username,Avatar URL,Profile URL,Local Avatar")
+  foreach ($r in $rows) {
+    $un = ([string]$r.$uCol).Trim()
+    $nm = if ($nCol) { ([string]$r.$nCol).Trim() } else { "" }
+    if (-not $nm) { $nm = $un }
+    $av = if ($aCol) { ([string]$r.$aCol).Trim() } else { "" }
+    $pf = if ($pCol) { ([string]$r.$pCol).Trim() } else { "" }
+    $out += ((Esc $nm) + "," + (Esc $un) + "," + (Esc $av) + "," + (Esc $pf) + "," + (Esc ("avatars/" + $un + ".jpg")))
+  }
+  $target = Join-Path $desk "avatar-racing-roster.csv"
+  [System.IO.File]::WriteAllText($target, (($out -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding($true)))
+  $deskMsg = ("桌面名册已刷新：" + $target + "（" + ($out.Count - 1) + " 位）")
+}
 
 # ---- 4) 提交推送 ----
 if ($Push) {
