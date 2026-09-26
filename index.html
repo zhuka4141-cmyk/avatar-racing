@@ -35,6 +35,7 @@ button{font:inherit}
 .btn.primary{background:#2f6df6;border-color:#2f6df6;color:#fff}
 .btn.ghost{background:#f7f9fc}
 .btn.danger{color:#c93b3b;border-color:#f0cdcd;background:#fff6f6}
+.btn.rig-on{background:#fff6e6;border-color:#efd8a4;color:#a2701b;font-weight:700}
 .empty{margin-top:18px;padding:22px;text-align:center;color:#68727f;font-size:13px;background:#fff;border:1px dashed #d8dee6;border-radius:14px}
 .actions{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:rgba(255,255,255,.95);border-top:1px solid #e2e7ee;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;backdrop-filter:blur(6px);z-index:20}
 .actions .btn{flex:1 1 auto;min-width:104px;height:46px}
@@ -172,6 +173,40 @@ function rrect(g,x,y,w,h,r){
 function fmtTime(v){ return (v >= 0 ? v.toFixed(3) : '0.000') + 's'; }   // 毫秒精度
 function dist(a,b){ var dx=b.x-a.x, dy=b.y-a.y; return Math.sqrt(dx*dx+dy*dy); }
 
+/* ---- 内定（指定某人夺冠）--------------------------------------------- *
+ * 目标：一定夺冠，但全程看起来就是个普通选手。
+ * 关键约束（实测出来的）：自然产生的冠军也是「中段乱斗、末段发力」，
+ * 全程待在前三反而最可疑。所以中段不给任何额外加速 —— 让它和所有人
+ * 一样被追赶机制反复超越、掉到中游，只在最后一段才把差距收回来。
+ *   ① 基准速度 baseSpeed 只比场上最快的人高一点点（界面上不显示速度，不可见）。
+ *   ② 中段完全不加成（和普通车走同一条公式），所以它照样会被超车。
+ *   ③ 终盘按「与最强对手的差距」做伺服：落后就补，领先过多就收，
+ *      把领先量收敛到 endTarget 那一丁点，冲线像险胜而不是碾压。
+ *   ④ 最后一段留一档「最后一口气」兜底，确保是它先压线。
+ * 被指定的人从第一排发车（见 createCars）。
+ *
+ * 怎么调「明显程度」（改完跑 node qa_rig.js 看指标）：
+ *   - 想更稳地夺冠     → 调大 servoChase；想更不显眼 → 调小
+ *   - 想赢得多一点/少一点 → 调 endTarget（它就是冲线时的领先量）
+ *   - 想让它更早发力   → 调大 endSpan（中段就更像强队，也更显眼）
+ *   - 想让它多被超几次 → 调小 baseEdge，或调大 endSpan 之外不动（baseEdge 越小越不起眼）
+ *   - 起点第一排是硬编码的：createCars 里 wantGi 那一行
+ * 所有参数都只在「被指定的人」身上生效，对其他人逐位无影响（qa_physics.js 可证）。
+ * -------------------------------------------------------------------- */
+var RIG = {
+  baseEdge:  0.020,   // 相对场上最快 baseSpeed 的额外比例（不可见）
+  endSpan:   3200,    // 终盘长度（世界单位）—— 只在这最后一段才发力
+  endTarget: 120,     // 终盘想保持的领先量（约 0.25 秒；对齐自然冠军的量级）
+  servoHalf: 140,     // 伺服误差半饱和点（越小越「硬」）
+  servoChase:0.40,    // 终盘「还落后」时的强度 —— 稳定夺冠的保证
+  servoHold: 0.12,    // 终盘「领先过多」时的收油强度 —— 不把差距拉开
+  paceDamp:  0.60,    // 后半程压掉自身速度波动的比例（让终盘更可控）
+  lockSpan:  600,     // 「最后一口气」的长度（世界单位）
+  lockLead:  320,     // 「最后一口气」的触发领先量
+  lockBoost: 0.45     // 「最后一口气」的强度
+};
+var riggedId = null;  // 被指定夺冠的参赛者 id；null = 不内定
+
 var setupView = document.getElementById('setupView');
 var raceView = document.getElementById('raceView');
 var listEl = document.getElementById('list');
@@ -243,6 +278,26 @@ function syncCard(p){
   n.tag.textContent = (p.avatarSource === 'upload') ? '自定义头像'
                     : (p.avatarSource === 'remote' ? '名单头像' : '默认头像');
 }
+/* ---- 内定（指定某人夺冠）----------------------------------------------- *
+ * 入口只在设置页：被指定的人会排在发车第一排、并略微更快，但比赛画面里
+ * 没有任何标记，也没有速度/名次提示能看出差异。
+ * -------------------------------------------------------------------- */
+function syncRigButtons(){
+  for (var i=0;i<participants.length;i++){
+    var p = participants[i];
+    if (!p.node || !p.node.rigBtn) continue;
+    var on = (riggedId === p.id);
+    p.node.rigBtn.textContent = on ? '★ 已指定' : '☆ 指定夺冠';
+    p.node.rigBtn.title = on ? '取消指定' : '指定 TA 夺冠（比赛里不会出现任何标记）';
+    if (on) p.node.rigBtn.classList.add('rig-on');
+    else p.node.rigBtn.classList.remove('rig-on');
+  }
+}
+function toggleRig(p){
+  riggedId = (riggedId === p.id) ? null : p.id;
+  syncRigButtons();
+  toast(riggedId === null ? '已取消指定' : ('已指定 ' + displayName(p) + ' 夺冠（比赛里看不出来）'));
+}
 function buildCard(p){
   var card = document.createElement('div');
   card.className = 'card';
@@ -275,6 +330,10 @@ function buildCard(p){
     toast('已恢复默认头像：' + displayName(p));
   });
   row.appendChild(upLabel); row.appendChild(resetBtn);
+  var rigBtn = document.createElement('button');
+  rigBtn.type = 'button'; rigBtn.className = 'btn small ghost';
+  rigBtn.addEventListener('click', function(){ toggleRig(p); });
+  row.appendChild(rigBtn);
   var tag = document.createElement('span');
   tag.className = 'st'; tag.style.fontSize = '12px'; tag.style.color = '#68727f'; tag.style.alignSelf = 'center';
   row.appendChild(tag);
@@ -283,8 +342,9 @@ function buildCard(p){
   del.type = 'button'; del.className = 'btn small danger'; del.textContent = '删除';
   del.addEventListener('click', function(){ removeParticipant(p); });
   card.appendChild(av); card.appendChild(mid); card.appendChild(del);
-  p.node = { card: card, img: img, inp: inp, tag: tag };
+  p.node = { card: card, img: img, inp: inp, tag: tag, rigBtn: rigBtn };
   syncCard(p);
+  syncRigButtons();
   return card;
 }
 function updateCount(){
@@ -313,6 +373,7 @@ function removeParticipant(p){
   var i = participants.indexOf(p);
   if (i < 0) return;
   participants.splice(i,1);
+  if (riggedId === p.id){ riggedId = null; syncRigButtons(); }
   if (p.node && p.node.card.parentNode) p.node.card.parentNode.removeChild(p.node.card);
   emptyEl.hidden = participants.length > 0;
   updateCount();
@@ -321,6 +382,7 @@ function removeParticipant(p){
 function clearAll(){
   participants.length = 0;
   gridOrder = null;
+  riggedId = null;
   listEl.innerHTML = '';
   emptyEl.hidden = false;
   updateCount();
@@ -890,7 +952,7 @@ function indexAtS(track, s){
 var race = {
   phase: 'setup', seed: 1, track: null,
   elapsed: 0, countdown: 0, waitingElapsed: 0, endingElapsed: 0, leaderFinishAt: 0,
-  cars: [], ranked: [], results: [], focusY: 0.62, lowQ: false,
+  cars: [], ranked: [], results: [], focusY: 0.62, lowQ: false, rival: -Infinity,
   cam: { s:0, x:0, y:0, ang:-Math.PI/2 }
 };
 
@@ -928,9 +990,30 @@ function createCars(track, rnd){
   });
   var n = cars.length;
   var grid = gridPlan(n);
+  // 发车格：默认按名单顺序；点过「随机排序」后按抽签结果落位（车的位置也是一次独立随机）
+  var gorder = [];
+  for (var g=0;g<n;g++) gorder.push((gridOrder && gridOrder.length === n) ? gridOrder[g] : g);
+  // ---- 内定：把被指定的人换到第一排 ------------------------------------
+  // 只做一次换位，让被指定的人拿到第一排的格子，同时保证 gorder 仍是 0..n-1 的
+  // 合法排列 —— 其余人的相对顺序完全不受影响。
+  var rig = null;
+  if (riggedId != null){
+    for (var q=0;q<n;q++){ if (cars[q].p && cars[q].p.id === riggedId){ rig = cars[q]; break; } }
+  }
+  if (rig){
+    var ri = cars.indexOf(rig);
+    // 第一排靠中间的位置（不抢最内侧的杆位，免得一眼就看出来）
+    var wantGi = clamp(Math.round((grid.cols-1)/2), 0, grid.cols-1);
+    var curGi = gorder[ri];
+    if (curGi !== wantGi){
+      var holder = -1;
+      for (var z=0;z<n;z++){ if (gorder[z] === wantGi){ holder = z; break; } }
+      gorder[ri] = wantGi;
+      if (holder >= 0 && holder !== ri) gorder[holder] = curGi;
+    }
+  }
   for (var i=0;i<n;i++){
-    // 发车格默认按名单顺序；点过「随机排序」后按抽签结果落位（车的位置也是一次独立随机）
-    var gi = (gridOrder && gridOrder.length === n) ? gridOrder[i] : i;
+    var gi = gorder[i];
     var col = gi % grid.cols;
     // 车位居中排布、间距 = LANE_STEP，变道时一格格挪
     var slot = col - (grid.cols - 1)/2;
@@ -938,6 +1021,16 @@ function createCars(track, rnd){
     cars[i].s = -70 - Math.floor(gi/grid.cols) * grid.spacing;
     cars[i].lane = cars[i].lateral;
     cars[i].baseLane = cars[i].lane;
+  }
+  // ---- 内定：摆完发车格再调参数 ----------------------------------------
+  if (rig){
+    rig.rigged = true;
+    var bestBase = 0;
+    for (var b=0;b<n;b++) if (cars[b].baseSpeed > bestBase) bestBase = cars[b].baseSpeed;
+    rig.baseSpeed = bestBase * (1 + RIG.baseEdge);     // 只比场上最快的人快一丁点
+    rig.startDelay = Math.min(rig.startDelay, 0.12);   // 不在起跑反应上吃亏
+    rig.accel = Math.max(rig.accel, 2.6);              // 起步别被憋住
+    rig.finishBias = 0.015;                            // 终盘偏置取原分布的上沿（原为 ±1.5%）
   }
   return cars;
 }
@@ -950,6 +1043,10 @@ function updateCar(c, dt, t, raceLen){
     var pace = 1 + 0.12*Math.sin(t*0.37 + c.paceSeed)
                  + 0.07*Math.sin(t*0.93 + c.paceSeed2)
                  + 0.05*Math.sin(t*0.21 + c.paceSeed3);
+    // 内定车：随比赛推进把它自己的正弦抖动压掉（均值仍是 1，只是跑得更「稳」）
+    if (c.rigged && RIG.paceDamp > 0){
+      pace = 1 + (pace - 1) * (1 - RIG.paceDamp * clamp(c.s / raceLen, 0, 1));
+    }
     // ---- 追赶机制 ----
     // 后车获得平滑追赶增益；加速开始后持续到结束，保留完成超车的速度优势。
     var rank = c.rank || 1;
@@ -988,7 +1085,7 @@ function updateCar(c, dt, t, raceLen){
     // 变道/穿车时给一脚额外推力：要快速超过，不能并排磨蹭
     if (c.passTimer > 0) c.passTimer -= dt;
     var passBoost = c.passTimer > 0 ? c.passPower : 0;
-    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * c.catchup * (1 + passBoost);
+    targetV = c.baseSpeed * pace * (1 + c.draft) * c.follow * (1 - 0.22 * c.blocked) * c.catchup * (1 + passBoost) * rigFactor(c, raceLen);
   }
   if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel*dt));
   else c.v = 0;
@@ -1012,6 +1109,43 @@ function updateCar(c, dt, t, raceLen){
   c.lateral = clamp(nl, -LANE_MAX, LANE_MAX);
   c.yaw = damp(c.yaw, clamp(Math.atan2(vn, Math.max(60, c.v)), -0.4, 0.4), 6, dt);
   c.progress = clamp(c.s / raceLen, 0, 1);
+}
+/* ---- 内定车的速度系数 ------------------------------------------------- *
+ * 中段返回 1（与普通车完全一致，所以照样会被超、会掉到中游）。
+ * 只有进入终盘才开始发力，且是「按差距自适应」而不是固定倍率：
+ *   err>0 表示还没到目标领先量 → 加油；err<0 表示领先太多 → 收油。
+ * race.rival = 「除内定车之外最靠前的车」，见 computeRival。
+ * -------------------------------------------------------------------- */
+function rigFactor(c, raceLen){
+  if (!c.rigged) return 1;
+  var rival = race.rival;
+  if (!isFinite(rival)) return 1;
+  var f = 1;
+  var margin = c.s - rival;                                   // >0 = 正领先这么多
+  var endT = 1 - clamp((raceLen - c.s) / RIG.endSpan, 0, 1);  // 0 → 1 进入终盘
+  // 终盘伺服：把领先量收敛到 endTarget
+  if (endT > 0){
+    var err = RIG.endTarget - margin;
+    if (err > 0) f += clamp(err / RIG.servoHalf, 0, 1) * RIG.servoChase * endT;
+    else         f -= clamp(-err / RIG.servoHalf, 0, 1) * RIG.servoHold * endT;
+  }
+  // 最后一口气：进入最后 lockSpan 后只要还没把对手甩开，就再补一档，确保先压线
+  var lockT = 1 - clamp((raceLen - c.s) / RIG.lockSpan, 0, 1);
+  if (lockT > 0 && margin < RIG.lockLead){
+    f += lockT * RIG.lockBoost * clamp((RIG.lockLead - margin) / RIG.lockLead, 0, 1);
+  }
+  return f;
+}
+// 除内定车之外最靠前的车（含已冲线还在滑行的）——内定车唯一需要盯住的对手
+function computeRival(cars){
+  var best = -Infinity;
+  for (var i=0;i<cars.length;i++){
+    var c = cars[i];
+    if (c.gone) continue;
+    if (riggedId != null && c.p && c.p.id === riggedId) continue;
+    if (c.s > best) best = c.s;
+  }
+  race.rival = best;
 }
 function planOvertakes(cars){
   // 每 0.25 秒决策一次车道：能变道超车就先超，没机会时偶尔自己换个车道跑。
@@ -1200,6 +1334,7 @@ function updateRace(dt){
   try { for (var rp=0; rp<2; rp++){ if (!separateOverlap(cars, dt, true)) break; } } catch (e1) {}
   race.ranked = rankCars(cars);
   for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
+  computeRival(cars);
 
   if (race.phase === 'racing'){
     var lead = race.ranked[0];
@@ -1615,6 +1750,7 @@ function startRace(){
   race.cars = createCars(race.track, rnd);
   race.ranked = rankCars(race.cars);
   for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
+  computeRival(race.cars);
   race.phase = 'countdown';
   race.countdown = 3.9;
   var startS = race.cars.length ? race.cars[0].s : 0;
