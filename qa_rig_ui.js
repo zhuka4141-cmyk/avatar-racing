@@ -234,3 +234,102 @@ test('不指定任何人时，比赛照常结束（内定未开启不应影响�
   assert.ok(pump());
   assert.equal(race().results.length, 6);
 });
+
+test('内定的人每局都从第一排出发，但位置会变（不会每次都停在同一格）', () => {
+  const { document, participants, race } = boot();
+  click(document.getElementById('clearBtn'));
+  click(document.getElementById('sampleBtn'));                 // 6 位 → 第一排 6 个格子
+  const P = participants();
+  const target = P[2];
+  click(target.node.rigBtn);
+
+  const seen = new Set();
+  const ROUNDS = 60;                                           // 每局 startRace 都会换一个新种子
+  for (let i = 0; i < ROUNDS; i++) {
+    click(document.getElementById('startBtn'));
+    const r = race();
+    const car = r.cars.find(c => c.p.id === target.id);
+    assert.equal(car.s, -70, '第 ' + (i + 1) + ' 局没有从第一排发车');
+    assert.equal(r.cars.filter(c => c.rigged).length, 1, '第 ' + (i + 1) + ' 局内定车数量不对');
+    seen.add(Math.round(car.lateral));
+  }
+  assert.ok(seen.size >= 4,
+    '第一排只出现过 ' + seen.size + ' 个不同位置，说明位置没在变：' + [...seen].join(','));
+  console.log('    第一排位置随机化：' + ROUNDS + ' 局出现 ' + seen.size + '/6 个不同格子');
+});
+
+test('搜索框能按姓名和 IG 用户名筛选名单，且不影响实际参赛人数', () => {
+  const { document, participants, race } = boot();
+  const input = document.getElementById('searchInput');
+  const bar = document.getElementById('searchBar');
+  const countEl = document.getElementById('searchCount');
+  const clearEl = document.getElementById('searchClear');
+
+  click(document.getElementById('rosterBtn'));                 // 载入内置粉丝名单
+  const P = participants();
+  const TOTAL = P.length;                                      // 名单人数会随同步变化，测试不写死
+  assert.ok(TOTAL > 100, '内置名单应该有很多人，实际 ' + TOTAL);
+  assert.ok(!bar.hidden, '有参赛者时搜索栏应可见');
+
+  const visible = () => P.filter(p => !p.node.card.hidden);
+  const type = v => { input.value = v; input.dispatch('input'); };
+  // 独立参照：自己按同样的规则算一遍应该命中多少
+  const expectCount = q => {
+    q = q.trim().toLowerCase();
+    if (!q) return TOTAL;
+    return P.filter(p => (p.name || '').toLowerCase().includes(q) ||
+                         (p.username || '').toLowerCase().includes(q)).length;
+  };
+
+  assert.equal(visible().length, TOTAL);
+  assert.equal(countEl.textContent, '', '没搜索时不该显示计数');
+
+  // 按 IG 用户名搜，并且大小写不敏感
+  const tgt = P.find(p => p.username && p.username.length >= 6);
+  assert.ok(tgt, '名单里应该有人带 IG 用户名');
+  type(tgt.username.toUpperCase());
+  assert.equal(visible().length, expectCount(tgt.username), '按用户名筛选结果与参照不一致');
+  assert.ok(visible().some(p => p.username === tgt.username), '目标本人应该在结果里');
+  assert.equal(countEl.textContent, visible().length + ' / ' + TOTAL);
+
+  // 按姓名片段搜
+  const other = P.find(p => p.username !== tgt.username && (p.name || '').length >= 3);
+  type(other.name.slice(0, 3));
+  const q = other.name.slice(0, 3).trim().toLowerCase();
+  assert.equal(visible().length, expectCount(q), '按姓名筛选结果与参照不一致');
+  assert.ok(visible().length >= 1);
+
+  // 搜不到时应该是 0，而不是「全部显示」
+  type('zzz__no_such_person__zzz');
+  assert.equal(visible().length, 0);
+  assert.equal(countEl.textContent, '0 / ' + TOTAL);
+
+  // 清除按钮
+  assert.ok(!clearEl.hidden, '有搜索词时清除按钮应出现');
+  click(clearEl);
+  assert.equal(input.value, '');
+  assert.equal(visible().length, TOTAL, '清除后应恢复全部');
+  assert.ok(clearEl.hidden);
+
+  // 关键：过滤只是显示层 —— 开始比赛时仍然全部人上场
+  type(tgt.username);
+  assert.ok(visible().length < TOTAL, '过滤后应该少显示一些');
+  click(document.getElementById('startBtn'));
+  assert.equal(race().cars.length, TOTAL, '过滤不应该减少实际参赛人数');
+});
+
+test('清空全部之后搜索栏隐藏，重新加人后又能正常搜索', () => {
+  const { document, participants } = boot();
+  const input = document.getElementById('searchInput');
+  const bar = document.getElementById('searchBar');
+
+  click(document.getElementById('clearBtn'));
+  assert.ok(bar.hidden, '没有参赛者时搜索栏应隐藏');
+
+  click(document.getElementById('sampleBtn'));
+  assert.ok(!bar.hidden, '重新加人后搜索栏应回来');
+  input.value = '疾风'; input.dispatch('input');
+  const visible = participants().filter(p => !p.node.card.hidden);
+  assert.equal(visible.length, 1);
+  assert.equal(visible[0].name, '疾风');
+});

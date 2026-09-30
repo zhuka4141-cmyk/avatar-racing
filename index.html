@@ -22,6 +22,12 @@ button{font:inherit}
 .head .ver #diag{margin-left:8px;color:#c0663b;font-weight:600}
 .head .count{display:inline-block;margin-left:8px;padding:2px 10px;border-radius:999px;background:#e8f0fe;color:#2f6df6;font-size:13px;font-weight:700;vertical-align:middle;white-space:nowrap}
 .list{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+/* 搜索栏吸顶：人多的名单要滚很久，输入框必须一直在手边 */
+.search{position:sticky;top:0;z-index:15;display:flex;align-items:center;gap:8px;margin-top:14px;padding:10px 0;background:#eef1f4}
+.search input{flex:1 1 auto;min-width:0;height:40px;border:1px solid #dbe1e9;border-radius:10px;padding:0 12px;font-size:15px;background:#fff;color:#1d2430}
+.search input:focus{outline:2px solid #bcd0fb;border-color:#7fa8f8}
+.search-count{font-size:12px;color:#68727f;white-space:nowrap}
+.search input::-webkit-search-cancel-button{cursor:pointer}
 .card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e7ee;border-radius:14px;padding:10px 12px;box-shadow:0 1px 2px rgba(20,30,50,.04)}
 .avatar{width:52px;height:52px;flex:0 0 52px;border-radius:50%;overflow:hidden;background:#f1f4f8;border:1px solid #dbe1e9}
 .avatar img{width:100%;height:100%;display:block;object-fit:cover}
@@ -80,6 +86,11 @@ button{font:inherit}
       <h1>头像赛车<span id="countBadge" class="count">共 0 位参赛者</span></h1>
       <p class="sub">填写姓名并上传头像，点击“开始比赛”即可观看全自动头像赛车。至少需要 2 位参赛者；头像只在当前页面会话中使用，不会上传到任何服务器。</p>
       <p class="ver">构建 v4 · 头像来源：本地 avatars/ → 远程地址 → 默认头像<span id="diag"></span></p>
+    </div>
+    <div id="searchBar" class="search" hidden>
+      <input id="searchInput" type="search" placeholder="搜索姓名 / IG 用户名" autocomplete="off" spellcheck="false" />
+      <button id="searchClear" class="btn small ghost" type="button" hidden>清除</button>
+      <span id="searchCount" class="search-count"></span>
     </div>
     <div id="list" class="list"></div>
     <div id="empty" class="empty">还没有参赛者，点击下方“添加参赛者”或“填入示例参赛者”开始。</div>
@@ -190,13 +201,13 @@ function dist(a,b){ var dx=b.x-a.x, dy=b.y-a.y; return Math.sqrt(dx*dx+dy*dy); }
  *   - 想赢得多一点/少一点 → 调 endTarget（它就是冲线时的领先量）
  *   - 想让它更早发力   → 调大 endSpan（中段就更像强队，也更显眼）
  *   - 想让它多被超几次 → 调小 baseEdge，或调大 endSpan 之外不动（baseEdge 越小越不起眼）
- *   - 起点第一排是硬编码的：createCars 里 wantGi 那一行
+ *   - 第一排的具体格子是每局随机的（createCars 里的 wantGi），只保证在第一排
  * 所有参数都只在「被指定的人」身上生效，对其他人逐位无影响（qa_physics.js 可证）。
  * -------------------------------------------------------------------- */
 var RIG = {
-  baseEdge:  0.020,   // 相对场上最快 baseSpeed 的额外比例（不可见）
+  baseEdge:  0.030,   // 相对场上最快 baseSpeed 的额外比例（不可见）
   endSpan:   3200,    // 终盘长度（世界单位）—— 只在这最后一段才发力
-  endTarget: 120,     // 终盘想保持的领先量（约 0.25 秒；对齐自然冠军的量级）
+  endTarget: 140,     // 终盘想保持的领先量（约 0.3 秒；自然冠军最大领先就是 147 这个量级）
   servoHalf: 140,     // 伺服误差半饱和点（越小越「硬」）
   servoChase:0.40,    // 终盘「还落后」时的强度 —— 稳定夺冠的保证
   servoHold: 0.12,    // 终盘「领先过多」时的收油强度 —— 不把差距拉开
@@ -211,6 +222,13 @@ var setupView = document.getElementById('setupView');
 var raceView = document.getElementById('raceView');
 var listEl = document.getElementById('list');
 var emptyEl = document.getElementById('empty');
+// 搜索：注意这些 DOM 引用必须留在这里（var setupView 之后）——
+// 测试用的源码切片从 var setupView 截断，切片里没有 document。
+var searchBarEl = document.getElementById('searchBar');
+var searchInputEl = document.getElementById('searchInput');
+var searchClearEl = document.getElementById('searchClear');
+var searchCountEl = document.getElementById('searchCount');
+var searchQuery = '';
 var canvas = document.getElementById('game');
 var ctx = canvas.getContext('2d');
 ctx.imageSmoothingQuality = 'high';
@@ -357,9 +375,32 @@ function renderList(){
   }
   emptyEl.hidden = participants.length > 0;
   updateCount();
+  applySearch();
+}
+/* ---- 搜索 / 过滤 ------------------------------------------------------- *
+ * 只影响「设置页看到哪些卡片」，不改变任何比赛用数据：被过滤掉的人只是卡片
+ * 不显示，点开始比赛时仍然是全部参赛者上场，名次也不受影响。
+ * -------------------------------------------------------------------- */
+function matchesSearch(p, q){
+  if (!q) return true;
+  if (displayName(p).toLowerCase().indexOf(q) >= 0) return true;
+  return (p.username || '').toLowerCase().indexOf(q) >= 0;   // IG 用户名也一起搜
+}
+function applySearch(){
+  var q = String(searchQuery || '').trim().toLowerCase();
+  var shown = 0;
+  for (var i=0;i<participants.length;i++){
+    var p = participants[i];
+    var ok = matchesSearch(p, q);
+    if (p.node && p.node.card) p.node.card.hidden = !ok;
+    if (ok) shown++;
+  }
+  if (searchBarEl) searchBarEl.hidden = (participants.length === 0);
+  if (searchClearEl) searchClearEl.hidden = !q;
+  if (searchCountEl) searchCountEl.textContent = q ? (shown + ' / ' + participants.length) : '';
 }
 function addParticipant(name){
-  var p = { id: nextId++, name: name || '', avatarSource: null, avatar: null, avatarDataUrl: '' };
+  var p = { id: nextId++, name: name || '', username: '', avatarSource: null, avatar: null, avatarDataUrl: '' };
   participants.push(p);
   setDefaultAvatar(p);
   var card = buildCard(p);
@@ -367,6 +408,7 @@ function addParticipant(name){
   emptyEl.hidden = true;
   updateCount();
   updateHint();
+  applySearch();
   return p;
 }
 function removeParticipant(p){
@@ -378,6 +420,7 @@ function removeParticipant(p){
   emptyEl.hidden = participants.length > 0;
   updateCount();
   updateHint();
+  applySearch();
 }
 function clearAll(){
   participants.length = 0;
@@ -387,6 +430,7 @@ function clearAll(){
   emptyEl.hidden = false;
   updateCount();
   updateHint();
+  applySearch();
   toast('已清空全部参赛者');
 }
 function shuffleAll(){
@@ -591,7 +635,7 @@ function importBuiltinRoster(){
   var added = 0, loading = 0, finished = 0, failed = 0, firstErr = '';
   for (var i=0;i<BUILTIN_ROSTER.length;i++){
     var nm = BUILTIN_ROSTER[i][0], un = BUILTIN_ROSTER[i][1];
-    var pp = { id: nextId++, name: nm || un, avatarSource: null, avatar: null, avatarDataUrl: '', avatarDiscUrl: '' };
+    var pp = { id: nextId++, name: nm || un, username: un || '', avatarSource: null, avatar: null, avatarDataUrl: '', avatarDiscUrl: '' };
     participants.push(pp);
     setDefaultAvatar(pp);
     listEl.appendChild(buildCard(pp));
@@ -646,13 +690,13 @@ function importCsvText(text){
     var name = (iName >= 0 ? String(row[iName]||'').trim() : '') ||
                (iUser >= 0 ? String(row[iUser]||'').trim() : '') || ('赛车手 ' + (added+1));
     var url = iAv >= 0 ? String(row[iAv]||'').trim() : '';
-    var pp = { id: nextId++, name: name, avatarSource: null, avatar: null, avatarDataUrl: '', avatarDiscUrl: '' };
+    var user = iUser >= 0 ? String(row[iUser]||'').trim() : '';
+    var pp = { id: nextId++, name: name, username: user, avatarSource: null, avatar: null, avatarDataUrl: '', avatarDiscUrl: '' };
     participants.push(pp);
     setDefaultAvatar(pp);                       // 先挂默认头像，远程图到了再替换
     listEl.appendChild(buildCard(pp));
     added++;
     // 头像来源优先级：仓库自带的 avatars/<用户名>.jpg（同源、不会过期）→ CSV 里的远程地址 → 默认头像
-    var user = iUser >= 0 ? String(row[iUser]||'').trim() : '';
     var srcs = [];
     if (/^[A-Za-z0-9._-]{1,40}$/.test(user)) srcs.push('avatars/' + user + '.jpg');
     if (/^https?:\/\//i.test(url)) srcs.push(url);
@@ -1013,8 +1057,10 @@ function createCars(track, rnd){
   }
   if (rig){
     var ri = cars.indexOf(rig);
-    // 第一排靠中间的位置（不抢最内侧的杆位，免得一眼就看出来）
-    var wantGi = clamp(Math.round((grid.cols-1)/2), 0, grid.cols-1);
+    // 第一排里随机挑一个格子：保证在第一排，但每局的位置都不一样 ——
+    // 固定停在同一个位子本身就会形成一个可被认出来的规律。
+    // 用赛道种子派生的 rnd，所以同一局重放（或回放）结果一致。
+    var wantGi = clamp(Math.floor(rnd() * grid.cols), 0, grid.cols - 1);
     var curGi = gorder[ri];
     if (curGi !== wantGi){
       var holder = -1;
@@ -1821,6 +1867,26 @@ function frame(now){
   try { render(dt); } catch (e2) { /* 渲染异常不白屏 */ }
 }
 
+// ---- 搜索栏：只切换卡片的显示，不影响参赛名单本身 ----
+if (searchInputEl){
+  searchInputEl.addEventListener('input', function(){
+    searchQuery = searchInputEl.value;
+    applySearch();
+  });
+  searchInputEl.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' || e.key === 'Esc'){
+      searchInputEl.value = ''; searchQuery = ''; applySearch();
+    }
+  });
+}
+if (searchClearEl){
+  searchClearEl.addEventListener('click', function(){
+    if (searchInputEl) searchInputEl.value = '';
+    searchQuery = '';
+    applySearch();
+    if (searchInputEl) searchInputEl.focus();
+  });
+}
 document.getElementById('addBtn').addEventListener('click', function(){
   var p = addParticipant('');
   if (p && p.node) p.node.inp.focus();

@@ -51,7 +51,9 @@ function simulation(n, seed, rigIdx) {
   r.phase = 'racing';
   const riggedCar = (ctx.riggedId == null) ? null : r.cars.find(c => c.p.id === ctx.riggedId);
   const startRow = riggedCar ? Math.round((-70 - riggedCar.s) / plan.spacing) : null;
-  return { ctx, r, plan, riggedCar, startRow };
+  // 第一排里的第几个格子（由 lateral 反推）：lateral = (col - (cols-1)/2) * LANE_STEP
+  const startCol = riggedCar ? Math.round(riggedCar.lateral / ctx.LANE_STEP + (plan.cols - 1) / 2) : null;
+  return { ctx, r, plan, riggedCar, startRow, startCol };
 }
 
 // 跑完一局，记录「被观察对象」的观感指标。watch = null 时观察最终冠军。
@@ -171,27 +173,35 @@ console.log('-'.repeat(106));
 const failures = [];
 for (const c of CASES) {
   const wins = [], fronts = [], losts = [], maxLeads = [], shares = [], gaps = [], times = [];
-  const worsts = [], top3s = [];
+  const worsts = [], top3s = [], cols = [];
   for (const seed of SEEDS) {
-    const { ctx, r, riggedCar, startRow } = simulation(c.n, seed, c.rigIdx);
+    const { ctx, r, riggedCar, startRow, startCol } = simulation(c.n, seed, c.rigIdx);
     const res = play(ctx, r, riggedCar);
     wins.push(res.winner === riggedCar ? 1 : 0);
     fronts.push(startRow === 0 ? 1 : 0);
+    cols.push(startCol);
     losts.push(res.lostLead); maxLeads.push(res.maxLead); shares.push(res.leadShare);
     gaps.push(res.gapAtFinish); times.push(res.finishAt);
     worsts.push(res.worstRank); top3s.push(res.top3Share);
   }
   const winRate = avg(wins), frontRate = avg(fronts);
   const zeroLoss = losts.filter(v => v === 0).length;
+  const distinctCols = new Set(cols).size;
+  const slots = Math.min(c.n, 14);
 
   console.log(pad(c.label, 20) + pad((winRate * 100).toFixed(0) + '%', 9) + pad((frontRate * 100).toFixed(0) + '%', 8) +
     pad(fmt(avg(losts), 2), 8) + pad(fmt(avg(maxLeads), 0), 10) + pad((avg(shares) * 100).toFixed(0) + '%', 10) +
     pad(fmt(avg(worsts), 1), 10) + pad((avg(top3s) * 100).toFixed(0) + '%', 10) +
     pad(fmt(avg(gaps), 0), 10) + pad(fmt(avg(times), 2) + 's', 9) +
-    '  (零超车 ' + zeroLoss + '/' + SEEDS.length + ')');
+    '  (零超车 ' + zeroLoss + '/' + SEEDS.length + ')  第一排位置 ' + distinctCols + '/' + slots + ' 种');
 
   if (winRate < 1) failures.push(c.label + ': 夺冠率只有 ' + (winRate * 100).toFixed(0) + '%，不保证第一');
   if (frontRate < 1) failures.push(c.label + ': 有局没有从第一排发车');
+  // 第一排的格子必须真的在换：固定停在同一格本身就是一条能被认出来的规律
+  const needCols = Math.min(4, slots);
+  if (distinctCols < needCols) {
+    failures.push(c.label + ': 第一排只出现过 ' + distinctCols + ' 个不同格子（至少要有 ' + needCols + ' 个，说明位置没在变）');
+  }
   if (!c.noGate) {
     const b = natural.get(c.n);
     const rLead = avg(maxLeads) / b.maxLead, rTop3 = avg(top3s) / b.top3;
