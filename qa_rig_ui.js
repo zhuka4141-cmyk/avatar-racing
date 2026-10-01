@@ -333,3 +333,30 @@ test('清空全部之后搜索栏隐藏，重新加人后又能正常搜索', ()
   assert.equal(visible.length, 1);
   assert.equal(visible[0].name, '疾风');
 });
+
+test('结算时每个人都拿到真实成绩，不再共享同一个「冻结时刻」', () => {
+  const { document, participants, race, pump } = boot();
+  click(document.getElementById('clearBtn'));
+  // 12 位 > 旧规则的「第 10 台就收工」，所以旧代码下必然有 2 人拿不到成绩
+  for (let i = 0; i < 12; i++) click(document.getElementById('addBtn'));
+  assert.equal(participants().length, 12);
+
+  click(document.getElementById('startBtn'));
+  assert.ok(pump(), '比赛应在帧数上限内跑完（阶段=' + race().phase + '）');
+
+  const results = race().results;
+  assert.equal(results.length, 12);
+  assert.equal(results.filter(r => !r.finished).length, 0,
+    '所有人都应该冲线，而不是只有前 10 个');
+  const shown = results.map(r => r.finishTime.toFixed(3));
+  assert.equal(new Set(shown).size, 12, '12 个人应该有 12 个不同的成绩，而不是一串相同的数');
+  assert.ok(results.every(r => Number.isFinite(r.finishTime) && r.finishTime > 0));
+
+  // 榜单上不该出现「—」（所有人都冲线了）
+  const board = document.getElementById('board');
+  const stTexts = findAll(board, e => e.className === 'st').map(e => e.textContent);
+  assert.equal(stTexts.length, 12, '榜单应有 12 行状态');
+  assert.ok(stTexts.every(t => t.indexOf('—') < 0), '有人冲线了就不该显示「—」：' + stTexts.join(' | '));
+
+  console.log('    结算成绩：' + shown[0] + 's ~ ' + shown[11] + 's，12 个互不相同');
+});

@@ -1409,10 +1409,17 @@ function updateRace(dt){
     }
   } else if (race.phase === 'waiting'){
     race.waitingElapsed += dt;
-    var fin = 0;
-    for (var k=0;k<cars.length;k++) if (cars[k].finished) fin++;
-    var need = Math.min(10, cars.length);
-    if (fin >= need || race.waitingElapsed >= 5) endRace();
+    // 等所有人都冲线再结算 —— 追赶机制会把整个车队压得很紧，实测从冠军冲线到
+    // 全部冲线最坏只多等约 3 秒（165 人），小场次只要 1~2 秒。所以让每个人都
+    // 拿到真实成绩，而不是原来那样第 10 台就收工、剩下的人共享一个"冻结时刻"。
+    // 6 秒是保底：万一有车卡住（或出异常被标 broken）不会无限等下去。
+    var fin = 0, alive = 0;
+    for (var k=0;k<cars.length;k++){
+      if (cars[k].broken) continue;          // 异常车不可能冲线，不计入总数
+      alive++;
+      if (cars[k].finished) fin++;
+    }
+    if (fin >= alive || race.waitingElapsed >= 6) endRace();
   } else if (race.phase === 'ending'){
     race.endingElapsed += dt;
     var anyVisible = false;
@@ -1765,8 +1772,9 @@ function showResults(){
     var img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer'; img.src = c.avatar || '';
     var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = c.name;
     var stt = document.createElement('span'); stt.className = 'st';
-    // 只显示时间，不再显示进度百分比：完赛=冲线时刻，未完赛=成绩冻结时刻（race.elapsed）
-    stt.textContent = (isLast ? 'LAST · ' : '') + (c.finished ? fmtTime(c.finishTime) : fmtTime(c.stoppedAt || 0));
+    // 完赛=冲线时刻；没冲线的显示「—」。绝不再把 race.elapsed（成绩冻结时刻）
+    // 当成成绩显示 —— 那是所有未完赛者共享的同一个数，一整列全是它，没有信息量。
+    stt.textContent = (isLast ? 'LAST · ' : '') + (c.finished ? fmtTime(c.finishTime) : '—');
     row.appendChild(rank); row.appendChild(img); row.appendChild(nm); row.appendChild(stt);
     boardEl.appendChild(row);
   }

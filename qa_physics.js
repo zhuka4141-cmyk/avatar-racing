@@ -160,7 +160,7 @@ test('an overtake settles the random boost instead of flying past', () => {
   assert.ok(settled < boosted - 15, 'overtake must fade the boost: ' + settled.toFixed(0) + ' vs ' + boosted.toFixed(0));
 });
 
-test('whole races stay finite and settle by the tenth finisher or five seconds', () => {
+test('whole races stay finite and settle only after everyone has finished', () => {
   const metrics = [];
   for (const seed of [1, 42, 9876, 2026, 31415]) {
     const ctx = simulation(15, seed), r = ctx.race;
@@ -184,9 +184,15 @@ test('whole races stay finite and settle by the tenth finisher or five seconds',
     }
     assert.ok(maxOverlap <= 0.5, `cars overlapped ${(maxOverlap*100).toFixed(0)}% of the body`);
     assert.ok(r.leaderFinishAt >= 18 && r.leaderFinishAt <= 23, `winner at ${r.leaderFinishAt}`);
-    assert.ok(r.cars.filter(c => c.finished).length >= 10 || r.waitingElapsed >= 5);
-    assert.ok(r.waitingElapsed <= 5.04);
+    // 结算规则：等所有人都冲线（实测 15 人从冠军冲线到全部冲线只要 ~1.5 秒），
+    // 6 秒只是防止个别车卡死的上限。所以每个人都必须拿到真实成绩，
+    // 不能再出现「只有前 10 个有成绩、其余共享同一个冻结时刻」的情况。
+    assert.equal(r.cars.filter(c => c.finished).length, 15, '应等所有人都冲线才结算');
+    assert.ok(r.waitingElapsed <= 6.04, `等待超上限：${r.waitingElapsed.toFixed(2)}s`);
     assert.equal(r.results.length, 15);
+    assert.ok(r.results.every(x => x.finished && x.finishTime > 0), '每个人都应该有冲线时刻');
+    assert.equal(new Set(r.results.map(x => x.finishTime.toFixed(3))).size, 15,
+      '15 个人应该有 15 个互不相同的成绩');
     metrics.push({ seed, passes, leaderChanges, first:+r.leaderFinishAt.toFixed(2), maxOverlap:+maxOverlap.toFixed(3) });
   }
   console.log('RACE_METRICS', JSON.stringify(metrics));
