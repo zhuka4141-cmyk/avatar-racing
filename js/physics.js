@@ -25,7 +25,7 @@
   }
 
   function createCars(track, participants, random, gridOrder, riggedId) {
-    var rnd = typeof random === 'function' ? random : Math.random;
+    var rnd = typeof random === 'function' ? random : math.mulberry32(1);
     participants = participants || [];
     var baseSpeed = track.raceLen / 21.5;
     var cars = participants.map(function (p) {
@@ -76,7 +76,7 @@
 
   function updateCar(race, c, dt, t, raceLen) {
     if (c.gone) return;
-    var targetV = 0, rnd = race.rng || Math.random;
+    var targetV = 0, rnd = race.rng || (race.rng = math.mulberry32((race.seed >>> 0) || 1));
     if (c.finished) targetV = c.baseSpeed * 0.55;
     else if (t >= c.startDelay) {
       var pace = 1 + 0.12 * Math.sin(t * 0.37 + c.paceSeed) + 0.07 * Math.sin(t * 0.93 + c.paceSeed2) + 0.05 * Math.sin(t * 0.21 + c.paceSeed3);
@@ -137,7 +137,7 @@
   }
 
   function interact(race, dt) {
-    var cars = race.cars, rnd = race.rng || Math.random;
+    var cars = race.cars, rnd = race.rng || (race.rng = math.mulberry32((race.seed >>> 0) || 1));
     for (var q = 0; q < cars.length; q++) { cars[q].draft = 0; cars[q].follow = 1; cars[q].aheadGap = Infinity; cars[q].aheadV = 0; }
     if (race.elapsed >= 0.7 && race.elapsed >= (race.nextPassCheck || 0)) {
       race.nextPassCheck = race.elapsed + 0.25;

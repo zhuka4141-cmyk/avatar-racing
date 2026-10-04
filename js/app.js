@@ -40,6 +40,7 @@ var toastTimer = 0;
 
 var participantStore = AvatarRace.participants.createStore();
 var participants = participantStore.items;
+var trackApi = AvatarRace.track;
 function displayName(p){ return AvatarRace.participants.displayName(participantStore, p); }
 function applyDefaultNames(){
   AvatarRace.participants.applyDefaultNames(participantStore);
@@ -235,6 +236,12 @@ var race = {
   cam: { s:0, x:0, y:0, ang:-Math.PI/2 }, rng: null,
   participants: participants, gridOrder: null, riggedId: null
 };
+
+// Rendering helpers continue to use the short local names, while their domain implementations live in track.js.
+gridPlan = trackApi.gridPlan;
+buildTrack = trackApi.buildTrack;
+sampleAt = trackApi.sampleAt;
+indexAtS = trackApi.indexAtS;
 
 function rankCars(cars){
   return cars.slice().sort(function(a,b){
