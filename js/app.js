@@ -1,86 +1,7 @@
 (function(){
 'use strict';
 
-var TAU = Math.PI * 2;
-var LANE_SPEED = 62;                         // 变道横移速度（世界单位/秒）：匀速并入，起步不甩、到位不蹭
-var CAR_W = 46;                              // 车身宽（含轮，世界单位）
-var CAR_LEN = 78;                            // 车长
-var MAX_OVERLAP = 0.5;                       // 允许的最大重叠面积占比（超过就横向让位）
-var LANES = 14;                              // 并排车位数量（赛道宽度由它决定）
-var LANE_STEP = 60;                          // 相邻车道中心间距（车身宽 46）
-var LANE_MAX = (LANES - 1) / 2 * LANE_STEP;  // 390：最外侧车位中心
-var HALF_W = LANE_MAX + 24;                  // 414：14 个车位 + 路缘
-var RACE_DIST = 9000;
-var FWD_RUNOFF = 1400;
-var VIEW_H = 820;
-var MIN_VIEW_W = 2 * HALF_W + 140;           // 视野至少完整放下整条赛道
-var PALETTE = ['#f2994a','#eb5757','#2d9cdb','#27ae60','#9b51e0','#f2c94c','#56ccf2','#bb6bd9','#f2789f','#4ecdc4'];
-
-function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
-function lerp(a,b,t){ return a+(b-a)*t; }
-function damp(cur,target,lambda,dt){ return lerp(cur,target,1-Math.exp(-lambda*dt)); }
-function dampAngle(cur,target,lambda,dt){
-  var d = ((target-cur+Math.PI)%TAU+TAU)%TAU - Math.PI;
-  return cur + d*(1-Math.exp(-lambda*dt));
-}
-function mulberry32(a){
-  return function(){
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    var t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-function hashStr(s){
-  var h = 2166136261;
-  for (var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h,16777619); }
-  return h >>> 0;
-}
-function rrect(g,x,y,w,h,r){
-  r = Math.min(r, Math.abs(w)/2, Math.abs(h)/2);
-  g.beginPath();
-  g.moveTo(x+r,y);
-  g.lineTo(x+w-r,y); g.arcTo(x+w,y,x+w,y+r,r);
-  g.lineTo(x+w,y+h-r); g.arcTo(x+w,y+h,x+w-r,y+h,r);
-  g.lineTo(x+r,y+h); g.arcTo(x,y+h,x,y+h-r,r);
-  g.lineTo(x,y+r); g.arcTo(x,y,x+r,y,r);
-  g.closePath();
-}
-function fmtTime(v){ return (v >= 0 ? v.toFixed(3) : '0.000') + 's'; }   // 毫秒精度
-function dist(a,b){ var dx=b.x-a.x, dy=b.y-a.y; return Math.sqrt(dx*dx+dy*dy); }
-
-/* ---- 内定（指定某人夺冠）--------------------------------------------- *
- * 目标：一定夺冠，但全程看起来就是个普通选手。
- * 关键约束（实测出来的）：自然产生的冠军也是「中段乱斗、末段发力」，
- * 全程待在前三反而最可疑。所以中段不给任何额外加速 —— 让它和所有人
- * 一样被追赶机制反复超越、掉到中游，只在最后一段才把差距收回来。
- *   ① 基准速度 baseSpeed 只比场上最快的人高一点点（界面上不显示速度，不可见）。
- *   ② 中段完全不加成（和普通车走同一条公式），所以它照样会被超车。
- *   ③ 终盘按「与最强对手的差距」做伺服：落后就补，领先过多就收，
- *      把领先量收敛到 endTarget 那一丁点，冲线像险胜而不是碾压。
- *   ④ 最后一段留一档「最后一口气」兜底，确保是它先压线。
- * 被指定的人从第一排发车（见 createCars）。
- *
- * 怎么调「明显程度」（改完跑 node qa_rig.js 看指标）：
- *   - 想更稳地夺冠     → 调大 servoChase；想更不显眼 → 调小
- *   - 想赢得多一点/少一点 → 调 endTarget（它就是冲线时的领先量）
- *   - 想让它更早发力   → 调大 endSpan（中段就更像强队，也更显眼）
- *   - 想让它多被超几次 → 调小 baseEdge，或调大 endSpan 之外不动（baseEdge 越小越不起眼）
- *   - 第一排的具体格子是每局随机的（createCars 里的 wantGi），只保证在第一排
- * 所有参数都只在「被指定的人」身上生效，对其他人逐位无影响（qa_physics.js 可证）。
- * -------------------------------------------------------------------- */
-var RIG = {
-  baseEdge:  0.030,   // 相对场上最快 baseSpeed 的额外比例（不可见）
-  endSpan:   3200,    // 终盘长度（世界单位）—— 只在这最后一段才发力
-  endTarget: 140,     // 终盘想保持的领先量（约 0.3 秒；自然冠军最大领先就是 147 这个量级）
-  servoHalf: 140,     // 伺服误差半饱和点（越小越「硬」）
-  servoChase:0.40,    // 终盘「还落后」时的强度 —— 稳定夺冠的保证
-  servoHold: 0.12,    // 终盘「领先过多」时的收油强度 —— 不把差距拉开
-  paceDamp:  0.60,    // 后半程压掉自身速度波动的比例（让终盘更可控）
-  lockSpan:  600,     // 「最后一口气」的长度（世界单位）
-  lockLead:  320,     // 「最后一口气」的触发领先量
-  lockBoost: 0.45     // 「最后一口气」的强度
-};
+var AvatarRace = window.AvatarRace;
 var riggedId = null;  // 被指定夺冠的参赛者 id；null = 不内定
 
 var setupView = document.getElementById('setupView');
@@ -138,14 +59,14 @@ function makeDefaultAvatar(name){
   var c = document.createElement('canvas');
   c.width = size; c.height = size;
   var g = c.getContext('2d');
-  var col = PALETTE[hashStr(name || 'racer') % PALETTE.length];
+  var col = AvatarRace.config.PALETTE[AvatarRace.math.hashStr(name || 'racer') % AvatarRace.config.PALETTE.length];
   g.fillStyle = col;
-  g.beginPath(); g.arc(size/2,size/2,size/2,0,TAU); g.fill();
+  g.beginPath(); g.arc(size/2,size/2,size/2,0,AvatarRace.config.TAU); g.fill();
   g.fillStyle = 'rgba(255,255,255,0.92)';
   g.font = 'bold ' + Math.round(size*0.46) + 'px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(initialOf(name), size/2, size/2 + size*0.03);
-  g.beginPath(); g.arc(size/2, size/2, size/2 - 4, 0, TAU);
+  g.beginPath(); g.arc(size/2, size/2, size/2 - 4, 0, AvatarRace.config.TAU);
   g.lineWidth = 6; g.strokeStyle = 'rgba(20,22,26,0.9)'; g.stroke();
   return c;
 }
@@ -667,11 +588,11 @@ function makeDisc(src, w, h){
   var m = Math.min(w, h);
   if (!(m > 0)) throw new Error('bad-size');
   dg.save();
-  dg.beginPath(); dg.arc(size/2, size/2, size/2 - 1, 0, TAU); dg.clip();
+  dg.beginPath(); dg.arc(size/2, size/2, size/2 - 1, 0, AvatarRace.config.TAU); dg.clip();
   dg.fillStyle = '#ffffff'; dg.fillRect(0, 0, size, size);
   dg.drawImage(src, (w-m)/2, (h-m)/2, m, m, 0, 0, size, size);
   dg.restore();
-  dg.beginPath(); dg.arc(size/2, size/2, size/2 - 4, 0, TAU);
+  dg.beginPath(); dg.arc(size/2, size/2, size/2 - 4, 0, AvatarRace.config.TAU);
   dg.lineWidth = 6; dg.strokeStyle = 'rgba(20,22,26,0.9)'; dg.stroke();
   return disc;
 }
@@ -735,16 +656,16 @@ function applyUpload(p, file){
  * ------------------------------------------------------------------ */
 
 function gridPlan(n){
-  var cols = Math.max(1, Math.min(Math.max(1,n), LANES));   // 最多 14 车一排
+  var cols = Math.max(1, Math.min(Math.max(1,n), AvatarRace.config.LANES));   // 最多 14 车一排
   var rows = Math.max(1, Math.ceil(Math.max(1,n) / cols));
   var spacing = 100; // 车长约 78；人数增加时延长起跑区，不压缩车距。
   return { cols: cols, rows: rows, spacing: spacing, depth: 70 + (rows - 1) * spacing + 140 };
 }
 function buildTrack(seed, backRunoff){
-  var L = RACE_DIST;
+  var L = AvatarRace.config.RACE_DIST;
   var step = 6;                 // 中心线采样步长（世界单位）
   for (var attempt=0; attempt<6; attempt++){
-    var rnd = mulberry32((seed + attempt*7919) >>> 0);
+    var rnd = AvatarRace.math.mulberry32((seed + attempt*7919) >>> 0);
     var st = { x: 0, y: 0, theta: 0, pts: [] };
     // 以曲率函数 kf 前进 len：κ 积分得航向，再积分得位置
     var advance = function(kf, len){
@@ -777,9 +698,9 @@ function buildTrack(seed, backRunoff){
     while (total < L - 260 && guard++ < 40){
       var legLen = Math.min(L - total, isFirst ? 1000 : (1150 + rnd()*750));
       // 缓弯最大横向摆动：够弯但仍让曲率半径远大于半宽（赛道末端自检会复核）
-      var swingCap = Math.min(HALF_W*0.30, legLen*legLen/(105*HALF_W));
+      var swingCap = Math.min(AvatarRace.config.HALF_W*0.30, legLen*legLen/(105*AvatarRace.config.HALF_W));
       var swing = isFirst ? 0 : swingCap*(0.55 + rnd()*0.45);   // 世界单位
-      var ph = rnd()*TAU;
+      var ph = rnd()*AvatarRace.config.TAU;
       var base = st.theta;
       (function(sw, p2, bs){
         advanceHead(function(sl, len){
@@ -787,14 +708,14 @@ function buildTrack(seed, backRunoff){
           var s2 = Math.sin(Math.PI*u), c2 = Math.cos(Math.PI*u);
           var env = s2*s2;                        // 两端为 0，保证进出直道时航向与基准一致
           var dEnv = 2*Math.PI*s2*c2;
-          var sn = Math.sin(TAU*u + p2), cs = Math.cos(TAU*u + p2);
-          return Math.atan((sw/len) * (dEnv*sn + env*TAU*cs));
+          var sn = Math.sin(AvatarRace.config.TAU*u + p2), cs = Math.cos(AvatarRace.config.TAU*u + p2);
+          return Math.atan((sw/len) * (dEnv*sn + env*AvatarRace.config.TAU*cs));
         }, legLen, bs);
       })(swing, ph, base);
       total += legLen;
       isFirst = false;
       // 相邻直道的间距：两个半宽 + 两侧摆动 + 安全缝，U 型弯半径才不至于让赛道带自己贴住
-      var pitch = 2*HALF_W + 2*HALF_W*0.30 + 180 + rnd()*200;
+      var pitch = 2*AvatarRace.config.HALF_W + 2*AvatarRace.config.HALF_W*0.30 + 180 + rnd()*200;
       var Rh = pitch/2;                 // U 型弯半径 = 间距的一半
       var turnLen = Math.PI*Rh;
       if (total + turnLen + 700 > L) break;   // 末尾留直道做终点线
@@ -822,14 +743,14 @@ function buildTrack(seed, backRunoff){
       if (R < minR) minR = R;
     }
     var clash = false;
-    var need = 2*HALF_W + 30;
+    var need = 2*AvatarRace.config.HALF_W + 30;
     for (var p2=0; p2<N && !clash; p2+=3){
       for (var q2=p2+200; q2<N; q2+=3){
         var ddx = base[p2].x - base[q2].x, ddy = base[p2].y - base[q2].y;
         if (ddx*ddx + ddy*ddy < need*need){ clash = true; break; }
       }
     }
-    if (minR > HALF_W*1.35 && !clash) return finishTrack(base, backRunoff, seed, minR, turnCount);
+    if (minR > AvatarRace.config.HALF_W*1.35 && !clash) return finishTrack(base, backRunoff, seed, minR, turnCount);
   }
   var straight = [];
   for (var q3=0;q3<Math.round(L/step)+1;q3++) straight.push({ x:0, y: q3*step });
@@ -851,12 +772,12 @@ function finishTrack(base, backRunoff, seed, minR, turns){
   var tex = pe.x-pe0.x, tey = pe.y-pe0.y;
   var tel = Math.max(1e-6, Math.sqrt(tex*tex+tey*tey));
   tex /= tel; tey /= tel;
-  for (var d2=10; d2<=FWD_RUNOFF; d2+=10) line.push({ x: pe.x + tex*d2, y: pe.y + tey*d2 });
+  for (var d2=10; d2<=AvatarRace.config.FWD_RUNOFF; d2+=10) line.push({ x: pe.x + tex*d2, y: pe.y + tey*d2 });
 
   var cum = new Array(line.length);
   cum[startIdx] = 0;
-  for (var m=startIdx+1;m<line.length;m++) cum[m] = cum[m-1] + dist(line[m-1], line[m]);
-  for (var n2=startIdx-1;n2>=0;n2--) cum[n2] = cum[n2+1] - dist(line[n2], line[n2+1]);
+  for (var m=startIdx+1;m<line.length;m++) cum[m] = cum[m-1] + AvatarRace.math.dist(line[m-1], line[m]);
+  for (var n2=startIdx-1;n2>=0;n2--) cum[n2] = cum[n2+1] - AvatarRace.math.dist(line[n2], line[n2+1]);
 
   var out = [];
   var prevAng = null;
@@ -864,8 +785,8 @@ function finishTrack(base, backRunoff, seed, minR, turns){
     var aa = line[Math.max(0,t2-1)], bb = line[Math.min(line.length-1,t2+1)];
     var ang = Math.atan2(bb.y-aa.y, bb.x-aa.x);
     if (prevAng !== null){
-      while (ang - prevAng > Math.PI) ang -= TAU;
-      while (ang - prevAng < -Math.PI) ang += TAU;
+      while (ang - prevAng > Math.PI) ang -= AvatarRace.config.TAU;
+      while (ang - prevAng < -Math.PI) ang += AvatarRace.config.TAU;
     }
     prevAng = ang;
     out.push({ x: line[t2].x, y: line[t2].y, s: cum[t2], ang: ang, nx: -Math.sin(ang), ny: Math.cos(ang) });
@@ -937,10 +858,10 @@ function createCars(track, rnd){
       baseSpeed: baseSpeed * (1 + (rnd()*2-1) * 0.13),   // 静态车速差距 ±13%
       accel: 2.2 * (1 + (rnd()*2-1) * 0.22),
       startDelay: rnd() * 0.5,
-      wobbleSeed: rnd() * TAU,
-      paceSeed: rnd() * TAU,
-      paceSeed2: rnd() * TAU,
-      paceSeed3: rnd() * TAU,
+      wobbleSeed: rnd() * AvatarRace.config.TAU,
+      paceSeed: rnd() * AvatarRace.config.TAU,
+      paceSeed2: rnd() * AvatarRace.config.TAU,
+      paceSeed3: rnd() * AvatarRace.config.TAU,
       draft: 0, blocked: 0, follow: 1, gone: false, clear: true,
       rank: 1, lastRank: 1, catchup: 1,
       boostTimer: 0, boostCooldown: 1 + rnd()*4, boostPower: 0,   // 第 6 名起的随机加速
@@ -967,7 +888,7 @@ function createCars(track, rnd){
     // 第一排里随机挑一个格子：保证在第一排，但每局的位置都不一样 ——
     // 固定停在同一个位子本身就会形成一个可被认出来的规律。
     // 用赛道种子派生的 rnd，所以同一局重放（或回放）结果一致。
-    var wantGi = clamp(Math.floor(rnd() * grid.cols), 0, grid.cols - 1);
+    var wantGi = AvatarRace.math.clamp(Math.floor(rnd() * grid.cols), 0, grid.cols - 1);
     var curGi = gorder[ri];
     if (curGi !== wantGi){
       var holder = -1;
@@ -979,9 +900,9 @@ function createCars(track, rnd){
   for (var i=0;i<n;i++){
     var gi = gorder[i];
     var col = gi % grid.cols;
-    // 车位居中排布、间距 = LANE_STEP，变道时一格格挪
+    // 车位居中排布、间距 = AvatarRace.config.LANE_STEP，变道时一格格挪
     var slot = col - (grid.cols - 1)/2;
-    cars[i].lateral = slot * LANE_STEP;
+    cars[i].lateral = slot * AvatarRace.config.LANE_STEP;
     cars[i].s = -70 - Math.floor(gi/grid.cols) * grid.spacing;
     cars[i].lane = cars[i].lateral;
     cars[i].baseLane = cars[i].lane;
@@ -991,7 +912,7 @@ function createCars(track, rnd){
     rig.rigged = true;
     var bestBase = 0;
     for (var b=0;b<n;b++) if (cars[b].baseSpeed > bestBase) bestBase = cars[b].baseSpeed;
-    rig.baseSpeed = bestBase * (1 + RIG.baseEdge);     // 只比场上最快的人快一丁点
+    rig.baseSpeed = bestBase * (1 + AvatarRace.config.RIG.baseEdge);     // 只比场上最快的人快一丁点
     rig.startDelay = Math.min(rig.startDelay, 0.12);   // 不在起跑反应上吃亏
     rig.accel = Math.max(rig.accel, 2.6);              // 起步别被憋住
     rig.finishBias = 0.015;                            // 终盘偏置取原分布的上沿（原为 ±1.5%）
@@ -1008,8 +929,8 @@ function updateCar(c, dt, t, raceLen){
                  + 0.07*Math.sin(t*0.93 + c.paceSeed2)
                  + 0.05*Math.sin(t*0.21 + c.paceSeed3);
     // 内定车：随比赛推进把它自己的正弦抖动压掉（均值仍是 1，只是跑得更「稳」）
-    if (c.rigged && RIG.paceDamp > 0){
-      pace = 1 + (pace - 1) * (1 - RIG.paceDamp * clamp(c.s / raceLen, 0, 1));
+    if (c.rigged && AvatarRace.config.RIG.paceDamp > 0){
+      pace = 1 + (pace - 1) * (1 - AvatarRace.config.RIG.paceDamp * AvatarRace.math.clamp(c.s / raceLen, 0, 1));
     }
     // ---- 追赶机制 ----
     // 后车获得平滑追赶增益；加速开始后持续到结束，保留完成超车的速度优势。
@@ -1017,7 +938,7 @@ function updateCar(c, dt, t, raceLen){
     var gap = Math.max(0, (Number.isFinite(race.leaderS) ? race.leaderS : c.s) - c.s);
     // 越靠后越快：按「落后领先者多少」连续给油。不按名次跳变 —— 按名次的话刚超到第一就会瞬间掉速，
     // 车队会来回乒乓；领先者本身不加成，所以速度最高的永远是最后面那些车。
-    var gapBoost = clamp(gap / 900, 0, 1) * 0.45;      // 落后 900 单位 → +45%，之后不再增加
+    var gapBoost = AvatarRace.math.clamp(gap / 900, 0, 1) * 0.45;      // 落后 900 单位 → +45%，之后不再增加
     if (rank < c.lastRank) c.settleTimer = 1.2;      // 名次上升 = 刚超过对手 → 进入自动调速
     c.lastRank = rank;
     // 第 6 名及以后：随机加速；前五名不额外给加速度。
@@ -1033,19 +954,19 @@ function updateCar(c, dt, t, raceLen){
         c.boostCooldown = 1.2 + Math.random()*3.6;
       }
       boost = c.boostTimer > 0 ? c.boostPower : 0;
-      if (c.aheadGap < 90) boost *= clamp(c.aheadGap / 90, 0, 1);   // 快贴上前面那台就收油
+      if (c.aheadGap < 90) boost *= AvatarRace.math.clamp(c.aheadGap / 90, 0, 1);   // 快贴上前面那台就收油
     } else {
       c.boostTimer = 0; c.boostPower = 0;
     }
     // 超过对手后自动调速：加速淡出，并贴住前车速度，不让它一路狂飙。
     if (c.settleTimer > 0){
       c.settleTimer -= dt;
-      boost *= clamp(c.settleTimer / 1.2, 0, 1);
+      boost *= AvatarRace.math.clamp(c.settleTimer / 1.2, 0, 1);
     }
-    var catchup = clamp(1 + gapBoost + boost, 0.85, 1.9);
-    var finishRamp = clamp((c.s - (raceLen - 1800)) / 1800, 0, 1);   // 保留中后段争夺，末段平滑淡出追赶。
-    if (finishRamp > 0) catchup = lerp(catchup, 1 + c.finishBias, finishRamp);
-    c.catchup = damp(c.catchup, catchup, 3, dt);
+    var catchup = AvatarRace.math.clamp(1 + gapBoost + boost, 0.85, 1.9);
+    var finishRamp = AvatarRace.math.clamp((c.s - (raceLen - 1800)) / 1800, 0, 1);   // 保留中后段争夺，末段平滑淡出追赶。
+    if (finishRamp > 0) catchup = AvatarRace.math.lerp(catchup, 1 + c.finishBias, finishRamp);
+    c.catchup = AvatarRace.math.damp(c.catchup, catchup, 3, dt);
     // 变道/穿车时给一脚额外推力：要快速超过，不能并排磨蹭
     if (c.passTimer > 0) c.passTimer -= dt;
     var passBoost = c.passTimer > 0 ? c.passPower : 0;
@@ -1058,21 +979,21 @@ function updateCar(c, dt, t, raceLen){
     c.finished = true;
     // 这一帧只走了 v*dt，冲线发生在帧内某个比例处 —— 反推出精确的亚帧时刻
     var travelled = c.v * dt;
-    var frac = travelled > 1e-6 ? clamp((c.s - raceLen) / travelled, 0, 1) : 0;
+    var frac = travelled > 1e-6 ? AvatarRace.math.clamp((c.s - raceLen) / travelled, 0, 1) : 0;
     c.finishTime = t - dt * frac;
   }
   if (c.s > raceLen + 2800) c.gone = true;
-  if (t >= c.passUntil) c.lane = damp(c.lane, c.baseLane, 0.18, dt);
+  if (t >= c.passUntil) c.lane = AvatarRace.math.damp(c.lane, c.baseLane, 0.18, dt);
   var wob = 7 * Math.sin(t*0.62 + c.wobbleSeed*2.1);
-  var target = clamp(c.lane + wob, -LANE_MAX, LANE_MAX);
+  var target = AvatarRace.math.clamp(c.lane + wob, -AvatarRace.config.LANE_MAX, AvatarRace.config.LANE_MAX);
   // 横移走匀速（线性）：原来用指数阻尼，起步瞬间横向速度能到 ~190 单位/秒，车头会先甩一下再蹭进车位
   var dx = target - c.lateral;
-  var stepX = LANE_SPEED * dt;
+  var stepX = AvatarRace.config.LANE_SPEED * dt;
   var nl = Math.abs(dx) <= stepX ? target : c.lateral + (dx > 0 ? stepX : -stepX);
   var vn = (nl - c.lateral) / Math.max(dt, 1e-4);
-  c.lateral = clamp(nl, -LANE_MAX, LANE_MAX);
-  c.yaw = damp(c.yaw, clamp(Math.atan2(vn, Math.max(60, c.v)), -0.4, 0.4), 6, dt);
-  c.progress = clamp(c.s / raceLen, 0, 1);
+  c.lateral = AvatarRace.math.clamp(nl, -AvatarRace.config.LANE_MAX, AvatarRace.config.LANE_MAX);
+  c.yaw = AvatarRace.math.damp(c.yaw, AvatarRace.math.clamp(Math.atan2(vn, Math.max(60, c.v)), -0.4, 0.4), 6, dt);
+  c.progress = AvatarRace.math.clamp(c.s / raceLen, 0, 1);
 }
 /* ---- 内定车的速度系数 ------------------------------------------------- *
  * 中段返回 1（与普通车完全一致，所以照样会被超、会掉到中游）。
@@ -1086,17 +1007,17 @@ function rigFactor(c, raceLen){
   if (!isFinite(rival)) return 1;
   var f = 1;
   var margin = c.s - rival;                                   // >0 = 正领先这么多
-  var endT = 1 - clamp((raceLen - c.s) / RIG.endSpan, 0, 1);  // 0 → 1 进入终盘
+  var endT = 1 - AvatarRace.math.clamp((raceLen - c.s) / AvatarRace.config.RIG.endSpan, 0, 1);  // 0 → 1 进入终盘
   // 终盘伺服：把领先量收敛到 endTarget
   if (endT > 0){
-    var err = RIG.endTarget - margin;
-    if (err > 0) f += clamp(err / RIG.servoHalf, 0, 1) * RIG.servoChase * endT;
-    else         f -= clamp(-err / RIG.servoHalf, 0, 1) * RIG.servoHold * endT;
+    var err = AvatarRace.config.RIG.endTarget - margin;
+    if (err > 0) f += AvatarRace.math.clamp(err / AvatarRace.config.RIG.servoHalf, 0, 1) * AvatarRace.config.RIG.servoChase * endT;
+    else         f -= AvatarRace.math.clamp(-err / AvatarRace.config.RIG.servoHalf, 0, 1) * AvatarRace.config.RIG.servoHold * endT;
   }
   // 最后一口气：进入最后 lockSpan 后只要还没把对手甩开，就再补一档，确保先压线
-  var lockT = 1 - clamp((raceLen - c.s) / RIG.lockSpan, 0, 1);
-  if (lockT > 0 && margin < RIG.lockLead){
-    f += lockT * RIG.lockBoost * clamp((RIG.lockLead - margin) / RIG.lockLead, 0, 1);
+  var lockT = 1 - AvatarRace.math.clamp((raceLen - c.s) / AvatarRace.config.RIG.lockSpan, 0, 1);
+  if (lockT > 0 && margin < AvatarRace.config.RIG.lockLead){
+    f += lockT * AvatarRace.config.RIG.lockBoost * AvatarRace.math.clamp((AvatarRace.config.RIG.lockLead - margin) / AvatarRace.config.RIG.lockLead, 0, 1);
   }
   return f;
 }
@@ -1116,13 +1037,13 @@ function planOvertakes(cars){
   if (race.elapsed < 0.7 || race.elapsed < (race.nextPassCheck || 0)) return;
   race.nextPassCheck = race.elapsed + 0.25;
   var freeLane = function(c, lane){        // 目标车位 + 横穿走廊都要空（含正在切进来的车）
-    var lo = Math.min(c.lateral, lane) - CAR_W/2, hi = Math.max(c.lateral, lane) + CAR_W/2;
+    var lo = Math.min(c.lateral, lane) - AvatarRace.config.CAR_W/2, hi = Math.max(c.lateral, lane) + AvatarRace.config.CAR_W/2;
     for (var k=0;k<cars.length;k++){
       var o = cars[k];
       if (o === c || o.broken || o.gone) continue;
       if (Math.abs(o.s - c.s) > 50) continue;          // 只看身边这一小段，不要求整条车道空着
-      if (Math.abs(o.lateral - lane) < CAR_W) return false;
-      if (o.passUntil > race.elapsed && Math.abs(o.lane - lane) < CAR_W) return false;
+      if (Math.abs(o.lateral - lane) < AvatarRace.config.CAR_W) return false;
+      if (o.passUntil > race.elapsed && Math.abs(o.lane - lane) < AvatarRace.config.CAR_W) return false;
       // 走廊里有人就不横穿：否则会从别人车身上刮过去（重叠必然超 50%）
       if (o.lateral > lo && o.lateral < hi) return false;
       if (o.passUntil > race.elapsed && o.lane > lo && o.lane < hi) return false;
@@ -1146,8 +1067,8 @@ function planOvertakes(cars){
       // 变道超车：往空的一侧挪一个车位
       var best = null, bestRoom = 0;
       for (var side=-1;side<=1;side+=2){
-        var lane = c.lateral + side*LANE_STEP;
-        if (Math.abs(lane) > LANE_MAX - 4) continue;
+        var lane = c.lateral + side*AvatarRace.config.LANE_STEP;
+        if (Math.abs(lane) > AvatarRace.config.LANE_MAX - 4) continue;
         var room = 250;
         for (var k2=0;k2<cars.length;k2++){
           var o2 = cars[k2], ds2 = o2.s-c.s;
@@ -1164,8 +1085,8 @@ function planOvertakes(cars){
     // 随机变道：没人挡路时也会换个车道，之后新车位就是它的巡航车道
     if (c.laneCooldown <= 0){
       var step = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random()*3));
-      var slot = clamp(Math.round(c.lateral / LANE_STEP) + step, -(LANES-1)/2, (LANES-1)/2);
-      var target = slot * LANE_STEP;
+      var slot = AvatarRace.math.clamp(Math.round(c.lateral / AvatarRace.config.LANE_STEP) + step, -(AvatarRace.config.LANES-1)/2, (AvatarRace.config.LANES-1)/2);
+      var target = slot * AvatarRace.config.LANE_STEP;
       if (Math.abs(target - c.lateral) > 20 && freeLane(c, target)){
         c.lane = target; c.baseLane = target;
         c.passUntil = race.elapsed + 1.0 + Math.random()*1.0;
@@ -1185,7 +1106,7 @@ function sortByS(cars){   // 逐对处理只看纵向邻居，车辆多少都不
 }
 function interact(cars, dt){
   // 车辆之间不碰撞、可以直接穿过去：这里不做刹车、也不做推开。
-  // 唯一约束是「两车重叠面积不超过车身的 MAX_OVERLAP」，超了才横向让位。
+  // 唯一约束是「两车重叠面积不超过车身的 AvatarRace.config.MAX_OVERLAP」，超了才横向让位。
   // 注意：这里没有车辆数上限 —— 变道与超车在多少台下都要照常发生。
   var n = cars.length;
   for (var q=0;q<n;q++){ cars[q].draft = 0; cars[q].follow = 1; cars[q].aheadGap = Infinity; cars[q].aheadV = 0; }
@@ -1208,7 +1129,7 @@ function interact(cars, dt){
         else if (adl < 26) a.draft -= 0.03;
         b.draft -= 0.04;
       }
-      if (ads > 20 && ads < 130 && adl < CAR_W && a.v >= b.v * 1.02){
+      if (ads > 20 && ads < 130 && adl < AvatarRace.config.CAR_W && a.v >= b.v * 1.02){
         // 确实在逼近前车 → 持续供一脚力，超车必须干脆，不允许并排磨蹭
         a.passTimer = 0.5; a.passPower = 0.20;
       }
@@ -1216,13 +1137,13 @@ function interact(cars, dt){
   }
   separateOverlap(cars, dt, false);
   for (var z=0;z<n;z++){
-    cars[z].draft = clamp(cars[z].draft, -0.09, 0.13);
+    cars[z].draft = AvatarRace.math.clamp(cars[z].draft, -0.09, 0.13);
     cars[z].follow = 1;
   }
 }
 // 重叠面积上限：两车横向至少要让到多远（ads = 纵向距离，越小要求越大）
 function overlapNeed(ads){
-  return CAR_W * (1 - MAX_OVERLAP * CAR_LEN / (CAR_LEN - ads)) + 3;   // 留 3 单位余量
+  return AvatarRace.config.CAR_W * (1 - AvatarRace.config.MAX_OVERLAP * AvatarRace.config.CAR_LEN / (AvatarRace.config.CAR_LEN - ads)) + 3;   // 留 3 单位余量
 }
 var overlapScratch = [];                      // 复用数组，避免每帧分配
 // instant=false：逐帧柔性让位（看起来像自然避让）；instant=true：一帧内直接达标（防叠加）
@@ -1240,7 +1161,7 @@ function separateOverlap(cars, dt, instant){
     for (var j=i+1;j<m;j++){
       var b = idx[j];
       var ads = b.s - a.s;
-      if (ads >= CAR_LEN) break;
+      if (ads >= AvatarRace.config.CAR_LEN) break;
       var need = overlapNeed(ads);
       var dl = a.lateral - b.lateral, adl = dl < 0 ? -dl : dl;
       if (adl >= need) continue;
@@ -1248,12 +1169,12 @@ function separateOverlap(cars, dt, instant){
       if (adl < 0.01) dir = (i % 2 === 0) ? 1 : -1;
       if (instant){
         var half = (need - adl) / 2;
-        a.lateral = clamp(a.lateral + dir * half, -LANE_MAX, LANE_MAX);
-        b.lateral = clamp(b.lateral - dir * half, -LANE_MAX, LANE_MAX);
+        a.lateral = AvatarRace.math.clamp(a.lateral + dir * half, -AvatarRace.config.LANE_MAX, AvatarRace.config.LANE_MAX);
+        b.lateral = AvatarRace.math.clamp(b.lateral - dir * half, -AvatarRace.config.LANE_MAX, AvatarRace.config.LANE_MAX);
       } else {
-        var move = Math.min(need - adl, CAR_W) * clamp(dt * 7, 0, 1);
-        a.lateral = clamp(a.lateral + dir * move, -LANE_MAX, LANE_MAX);
-        b.lateral = clamp(b.lateral - dir * move, -LANE_MAX, LANE_MAX);
+        var move = Math.min(need - adl, AvatarRace.config.CAR_W) * AvatarRace.math.clamp(dt * 7, 0, 1);
+        a.lateral = AvatarRace.math.clamp(a.lateral + dir * move, -AvatarRace.config.LANE_MAX, AvatarRace.config.LANE_MAX);
+        b.lateral = AvatarRace.math.clamp(b.lateral - dir * move, -AvatarRace.config.LANE_MAX, AvatarRace.config.LANE_MAX);
         // 正在穿过的那台（后车）加一脚，快速通过而不是并排磨蹭
         if (b.v >= a.v * 0.98){ b.passTimer = 0.9; b.passPower = 0.20; }
       }
@@ -1274,13 +1195,13 @@ function updateCamera(dt){
     targetFocus = 0.56;
   }
   var lam = race.phase === 'racing' ? 4.2 : 3.0;
-  race.cam.s = damp(race.cam.s, targetS, lam, dt);
+  race.cam.s = AvatarRace.math.damp(race.cam.s, targetS, lam, dt);
   var sp = sampleAt(race.track, race.cam.s);
   race.cam.x = sp.x; race.cam.y = sp.y;
   var ahead = sampleAt(race.track, race.cam.s + 330);
   var lookAng = Math.atan2(ahead.y - sp.y, ahead.x - sp.x);
-  race.cam.ang = dampAngle(race.cam.ang, lookAng, race.phase === 'racing' ? 3.5 : 3.0, dt);
-  race.focusY = damp(race.focusY, targetFocus, 3.0, dt);
+  race.cam.ang = AvatarRace.math.dampAngle(race.cam.ang, lookAng, race.phase === 'racing' ? 3.5 : 3.0, dt);
+  race.focusY = AvatarRace.math.damp(race.focusY, targetFocus, 3.0, dt);
 }
 function updateRace(dt){
   var cars = race.cars;
@@ -1403,10 +1324,10 @@ function drawGround(g, cam, halfDiag){
 function drawCheckerLine(g, track, s, rows, cols, depth){
   var p = sampleAt(track, s);
   var tx = Math.cos(p.ang), ty = Math.sin(p.ang);
-  var cell = (2*HALF_W)/cols;
+  var cell = (2*AvatarRace.config.HALF_W)/cols;
   for (var r=0;r<rows;r++){
     for (var c=0;c<cols;c++){
-      var u = -HALF_W + (c+0.5)*cell;
+      var u = -AvatarRace.config.HALF_W + (c+0.5)*cell;
       var v = (r - rows/2 + 0.5) * (depth/rows);
       var cx = p.x + p.nx*u + tx*v;
       var cy = p.y + p.ny*u + ty*v;
@@ -1420,10 +1341,10 @@ function drawCheckerLine(g, track, s, rows, cols, depth){
   }
 }
 function carBodyPath(g){
-  rrect(g, -19, -41, 38, 78, 9);
+  AvatarRace.math.rrect(g, -19, -41, 38, 78, 9);
 }
 function drawWheel(g,x,y){
-  rrect(g, x-4.6, y-5.6, 9.2, 11.2, 2.6);
+  AvatarRace.math.rrect(g, x-4.6, y-5.6, 9.2, 11.2, 2.6);
   g.fill();
   g.stroke();
 }
@@ -1434,7 +1355,7 @@ function drawCarShape(g, detailed){
   if (!detailed){
     g.fillStyle = body; g.strokeStyle = line; g.lineWidth = 2;
     carBodyPath(g); g.fill(); g.stroke();
-    g.beginPath(); g.arc(0, 1, 12, 0, TAU);
+    g.beginPath(); g.arc(0, 1, 12, 0, AvatarRace.config.TAU);
     g.fillStyle = '#f7f9fb'; g.fill(); g.stroke();
     return;
   }
@@ -1444,20 +1365,20 @@ function drawCarShape(g, detailed){
   drawWheel(g,-18, 17);
   drawWheel(g, 18, 17);
   g.fillStyle = body; g.strokeStyle = line; g.lineWidth = 1.8;
-  rrect(g,-9,-31,18,58,5); g.fill(); g.stroke();
-  rrect(g,-17.5,-16,10.5,26,4.5); g.fill(); g.stroke();
-  rrect(g, 7,-16,10.5,26,4.5); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g,-9,-31,18,58,5); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g,-17.5,-16,10.5,26,4.5); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g, 7,-16,10.5,26,4.5); g.fill(); g.stroke();
   g.beginPath();
   g.moveTo(-7.5,10); g.lineTo(-4.2,31); g.lineTo(4.2,31); g.lineTo(7.5,10);
   g.closePath(); g.fill(); g.stroke();
-  rrect(g,-18.5,26,37,8.5,3); g.fill(); g.stroke();
-  rrect(g,-20,25,4,11,1.6); g.fill(); g.stroke();
-  rrect(g, 16,25,4,11,1.6); g.fill(); g.stroke();
-  rrect(g,-17,-41,34,8,2.5); g.fill(); g.stroke();
-  rrect(g,-19,-42,4,11,1.6); g.fill(); g.stroke();
-  rrect(g, 15,-42,4,11,1.6); g.fill(); g.stroke();
-  rrect(g,-2.6,-33,5.2,9,1); g.fill(); g.stroke();
-  g.beginPath(); g.arc(0,1,13.2,0,TAU);
+  AvatarRace.math.rrect(g,-18.5,26,37,8.5,3); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g,-20,25,4,11,1.6); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g, 16,25,4,11,1.6); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g,-17,-41,34,8,2.5); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g,-19,-42,4,11,1.6); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g, 15,-42,4,11,1.6); g.fill(); g.stroke();
+  AvatarRace.math.rrect(g,-2.6,-33,5.2,9,1); g.fill(); g.stroke();
+  g.beginPath(); g.arc(0,1,13.2,0,AvatarRace.config.TAU);
   g.fillStyle = '#f7f9fb'; g.fill(); g.stroke();
 }
 // 车身与阴影预渲染成贴图：每帧每车只做一次 drawImage，因此可以完全不简化渲染
@@ -1495,7 +1416,7 @@ function labelWidth(g, text){
 }
 function drawLabel(g, x, y, w, text){
   g.fillStyle = 'rgba(26,33,44,0.5)';        // 更透明：名字重叠时也能看见下面那层
-  rrect(g, x-w/2, y - LABEL_H/2, w, LABEL_H, LABEL_H/2);
+  AvatarRace.math.rrect(g, x-w/2, y - LABEL_H/2, w, LABEL_H, LABEL_H/2);
   g.fill();
   g.fillStyle = 'rgba(255,255,255,0.92)';
   g.fillText(text, x, y+0.5);
@@ -1507,7 +1428,7 @@ function render(dt){
   ctx.fillStyle = '#e9edf1';
   ctx.fillRect(0,0,W,H);
   if (race.phase === 'setup' || !race.track) return;
-  var scale = Math.min(H/VIEW_H, W/MIN_VIEW_W);
+  var scale = Math.min(H/AvatarRace.config.VIEW_H, W/AvatarRace.config.MIN_VIEW_W);
   if (!(scale > 0)) return;
   var cam = race.cam;
   var alpha = cam.ang - Math.PI/2;
@@ -1528,14 +1449,14 @@ function render(dt){
 
   drawGround(ctx, cam, halfDiag);
 
-  strokePts(ctx, pts, i0, i1, 0, 2*HALF_W, '#8d9298');
-  strokePts(ctx, pts, i0, i1, HALF_W-5, 5, 'rgba(255,255,255,0.5)');
-  strokePts(ctx, pts, i0, i1, -(HALF_W-5), 5, 'rgba(255,255,255,0.5)');
-  strokePts(ctx, pts, i0, i1, HALF_W+9, 18, '#d24a4a');
-  strokePts(ctx, pts, i0, i1, -(HALF_W+9), 18, '#d24a4a');
+  strokePts(ctx, pts, i0, i1, 0, 2*AvatarRace.config.HALF_W, '#8d9298');
+  strokePts(ctx, pts, i0, i1, AvatarRace.config.HALF_W-5, 5, 'rgba(255,255,255,0.5)');
+  strokePts(ctx, pts, i0, i1, -(AvatarRace.config.HALF_W-5), 5, 'rgba(255,255,255,0.5)');
+  strokePts(ctx, pts, i0, i1, AvatarRace.config.HALF_W+9, 18, '#d24a4a');
+  strokePts(ctx, pts, i0, i1, -(AvatarRace.config.HALF_W+9), 18, '#d24a4a');
   var kerbLo = cam.s - halfDiag - 60, kerbHi = cam.s + halfDiag + 60;
-  kerbSegments(ctx, race.track, kerbLo, kerbHi, HALF_W+9, 18, '#f3f5f8', 0, 34);
-  kerbSegments(ctx, race.track, kerbLo, kerbHi, -(HALF_W+9), 18, '#f3f5f8', 0, 34);
+  kerbSegments(ctx, race.track, kerbLo, kerbHi, AvatarRace.config.HALF_W+9, 18, '#f3f5f8', 0, 34);
+  kerbSegments(ctx, race.track, kerbLo, kerbHi, -(AvatarRace.config.HALF_W+9), 18, '#f3f5f8', 0, 34);
 
   var visLo = cam.s - halfDiag - 120, visHi = cam.s + halfDiag + 120;
   if (0 > visLo && 0 < visHi) drawCheckerLine(ctx, race.track, 0, 2, 16, 46);
@@ -1575,7 +1496,7 @@ function render(dt){
     var wpos = carWorld(car);
     var sp2 = worldToScreen(wpos.x, wpos.y);
     if (sp2.x < -80 || sp2.x > W+80 || sp2.y < -80 || sp2.y > H+80){
-      car.labelAlpha = damp(car.labelAlpha || 0, 0, 15, dt);   // 只有驶出画面才淡出（同样快速）
+      car.labelAlpha = AvatarRace.math.damp(car.labelAlpha || 0, 0, 15, dt);   // 只有驶出画面才淡出（同样快速）
       continue;
     }
     var r = 11 * scale;
@@ -1589,7 +1510,7 @@ function render(dt){
     var rkAlive = car.finished ? 1e9 : ((car.rank || 1) - finCount);
     if (rkAlive <= 30) car.labelOn = true;
     else if (rkAlive > 32) car.labelOn = false;
-    car.labelAlpha = damp(car.labelAlpha || 0, car.labelOn ? 1 : 0, 15, dt);   // 快速显示：约 0.15 秒，只为避免硬切
+    car.labelAlpha = AvatarRace.math.damp(car.labelAlpha || 0, car.labelOn ? 1 : 0, 15, dt);   // 快速显示：约 0.15 秒，只为避免硬切
     if (car.labelAlpha > 0.01){
       labels.push({ p: car.p, x: sp2.x, y: sp2.y - (r + 12), text: displayName(car.p), alpha: car.labelAlpha });
     }
@@ -1631,7 +1552,7 @@ function updateHud(dt){
   for (var i=0;i<race.cars.length;i++) if (race.cars[i].finished) fin++;
   var st = 'Ready', sub = '';
   if (race.phase === 'countdown'){ st = 'Get ready'; sub = 'Engines starting'; }
-  else if (race.phase === 'racing'){ st = 'Racing'; sub = (lead ? ('Leader: ' + displayName(lead.p)) : 'Racing') + ' · elapsed ' + fmtTime(race.elapsed); }
+  else if (race.phase === 'racing'){ st = 'Racing'; sub = (lead ? ('Leader: ' + displayName(lead.p)) : 'Racing') + ' · elapsed ' + AvatarRace.math.fmtTime(race.elapsed); }
   else if (race.phase === 'waiting'){ st = 'Waiting for the rest'; sub = 'Finished ' + fin + '/' + race.cars.length + ' · ' + Math.max(0, 5 - race.waitingElapsed).toFixed(1) + 's left'; }
   else if (race.phase === 'ending'){ st = 'Race over'; sub = 'Cars leaving the track · finished ' + fin + '/' + race.cars.length; }
   else if (race.phase === 'results'){
@@ -1674,7 +1595,7 @@ function showResults(){
     var stt = document.createElement('span'); stt.className = 'st';
     // 完赛=冲线时刻；没冲线的显示「—」。绝不再把 race.elapsed（成绩冻结时刻）
     // 当成成绩显示 —— 那是所有未完赛者共享的同一个数，一整列全是它，没有信息量。
-    stt.textContent = (isLast ? 'LAST · ' : '') + (c.finished ? fmtTime(c.finishTime) : '—');
+    stt.textContent = (isLast ? 'LAST · ' : '') + (c.finished ? AvatarRace.math.fmtTime(c.finishTime) : '—');
     row.appendChild(rank); row.appendChild(img); row.appendChild(nm); row.appendChild(stt);
     boardEl.appendChild(row);
   }
@@ -1718,7 +1639,7 @@ function startRace(){
   race.nextPassCheck = 0;
   race.results = [];
   race.focusY = 0.62;
-  var rnd = mulberry32((race.seed ^ 0x9e3779b9) >>> 0);
+  var rnd = AvatarRace.math.mulberry32((race.seed ^ 0x9e3779b9) >>> 0);
   race.cars = createCars(race.track, rnd);
   race.ranked = rankCars(race.cars);
   for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
