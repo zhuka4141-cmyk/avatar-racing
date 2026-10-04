@@ -71,8 +71,8 @@
       avatarDataUrl: '',
       avatarDiscUrl: ''
     };
-    participant._displayName = displayName(store, participant);
     store.items.push(participant);
+    participant._displayName = displayName(store, participant);
     setDefaultAvatar(participant);
     return participant;
   }

@@ -44,3 +44,13 @@ test('skips blank rows during import', function () {
   assert.equal(result.added, 1);
   assert.equal(store.items[0].name, 'Bob');
 });
+
+test('assigns unique fallback display names to blank participants', function () {
+  var store = participants.createStore();
+  var first = participants.add(store, '');
+  var second = participants.add(store, '');
+  assert.equal(first._displayName, '赛车手 1');
+  assert.equal(second._displayName, '赛车手 2');
+  assert.equal(participants.displayName(store, first), '赛车手 1');
+  assert.equal(participants.displayName(store, second), '赛车手 2');
+});
