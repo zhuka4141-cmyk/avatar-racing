@@ -232,7 +232,8 @@ var race = {
   phase: 'setup', seed: 1, track: null,
   elapsed: 0, countdown: 0, waitingElapsed: 0, endingElapsed: 0, leaderFinishAt: 0,
   cars: [], ranked: [], results: [], focusY: 0.62, lowQ: false, rival: -Infinity,
-  cam: { s:0, x:0, y:0, ang:-Math.PI/2 }
+  cam: { s:0, x:0, y:0, ang:-Math.PI/2 }, rng: null,
+  participants: participants, gridOrder: null, riggedId: null
 };
 
 function rankCars(cars){
@@ -599,50 +600,12 @@ function updateCamera(dt){
   race.focusY = AvatarRace.math.damp(race.focusY, targetFocus, 3.0, dt);
 }
 function updateRace(dt){
-  var cars = race.cars;
-  var raceLen = race.track.raceLen;
-  race.elapsed += dt;
-  var t = race.elapsed;
-  try { interact(cars, dt); } catch (e0) {}
-  var lead0 = race.ranked && race.ranked[0];
-  race.leaderS = lead0 ? lead0.s : 0;
-  for (var i=0;i<cars.length;i++){
-    try { updateCar(cars[i], dt, t, raceLen); }
-    catch (e) { cars[i].broken = true; }
-  }
-  // 位置推进后必须重新兜底：横向阻尼可能又把两车拉近，重叠绝不允许超过 50%
-  try { for (var rp=0; rp<2; rp++){ if (!separateOverlap(cars, dt, true)) break; } } catch (e1) {}
-  race.ranked = rankCars(cars);
-  for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
-  computeRival(cars);
-
-  if (race.phase === 'racing'){
-    var lead = race.ranked[0];
-    if (lead && lead.finished){
-      race.phase = 'waiting';
-      race.waitingElapsed = 0;
-      race.leaderFinishAt = lead.finishTime;
-    }
-  } else if (race.phase === 'waiting'){
-    race.waitingElapsed += dt;
-    // 等所有人都冲线再结算 —— 追赶机制会把整个车队压得很紧，实测从冠军冲线到
-    // 全部冲线最坏只多等约 3 秒（165 人），小场次只要 1~2 秒。所以让每个人都
-    // 拿到真实成绩，而不是原来那样第 10 台就收工、剩下的人共享一个"冻结时刻"。
-    // 6 秒是保底：万一有车卡住（或出异常被标 broken）不会无限等下去。
-    var fin = 0, alive = 0;
-    for (var k=0;k<cars.length;k++){
-      if (cars[k].broken) continue;          // 异常车不可能冲线，不计入总数
-      alive++;
-      if (cars[k].finished) fin++;
-    }
-    if (fin >= alive || race.waitingElapsed >= 6) endRace();
-  } else if (race.phase === 'ending'){
-    race.endingElapsed += dt;
+  AvatarRace.physics.step(race, dt);
+  if (race.phase === 'ending'){
+    race.endingElapsed = (race.endingElapsed || 0) + dt;
     var anyVisible = false;
-    for (var m=0;m<cars.length;m++){
-      var cm = cars[m];
-      if (cm.gone) continue;
-      if (Math.abs(cm.s - race.cam.s) < 1200){ anyVisible = true; break; }
+    for (var i = 0; i < race.cars.length; i++) {
+      if (!race.cars[i].gone && Math.abs(race.cars[i].s - race.cam.s) < 1200) { anyVisible = true; break; }
     }
     if (!anyVisible || race.endingElapsed >= 12) showResults();
   }
@@ -1029,13 +992,15 @@ function startRace(){
   }
   applyDefaultNames();
   race.seed = (Math.random()*4294967295) >>> 0;
-  race.track = buildTrack(race.seed, gridPlan(participants.length).depth);
+  race.track = AvatarRace.track.buildTrack(race.seed, AvatarRace.track.gridPlan(participants.length).depth);
   race.elapsed = 0; race.waitingElapsed = 0; race.endingElapsed = 0; race.leaderFinishAt = 0;
   race.nextPassCheck = 0;
   race.results = [];
   race.focusY = 0.62;
-  var rnd = AvatarRace.math.mulberry32((race.seed ^ 0x9e3779b9) >>> 0);
-  race.cars = createCars(race.track, rnd);
+  race.rng = AvatarRace.math.mulberry32((race.seed ^ 0x9e3779b9) >>> 0);
+  race.riggedId = participantStore.riggedId;
+  race.participants = participants;
+  race.cars = AvatarRace.physics.createCars(race.track, participants, race.rng, participantStore.gridOrder, participantStore.riggedId);
   race.ranked = rankCars(race.cars);
   for (var r=0;r<race.ranked.length;r++) race.ranked[r].rank = r + 1;
   computeRival(race.cars);
