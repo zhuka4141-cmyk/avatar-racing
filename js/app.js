@@ -1103,7 +1103,10 @@ rankBtnEl.addEventListener('click', function(){ if (race.phase === 'ending') sho
 window.addEventListener('resize', function(){ resize(); });
 window.addEventListener('orientationchange', function(){ setTimeout(resize, 200); });
 
-window.__avatarRace = { race: race, participants: participants, buildTrack: buildTrack };
+AvatarRace.debug.install({
+  state: { race: race, participants: participantStore },
+  testMode: /(?:^|[?&])test=1(?:&|$)/.test(window.location.search || '')
+});
 
 buildCarSprites();
 resize();
