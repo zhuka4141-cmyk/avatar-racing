@@ -124,12 +124,12 @@ function Esc([string]$v) {
   return $sb.ToString()
 }
 
-# ---- 3) 更新 index.html 里的内置名单（「载入粉丝名单」按钮用的那份）----
+# ---- 3) 更新 data/roster.js 里的内置名单（「载入粉丝名单」按钮用的那份）----
 #      按行定位替换，不用跨行正则（避免第二次运行匹配不到的老问题）
 $rosterMsg = "未处理"
 if (-not $NoRoster) {
-  $idx = Join-Path $repo "index.html"
-  if (Test-Path -LiteralPath $idx) {
+  $rosterPath = Join-Path $repo "data\roster.js"
+  if (Test-Path -LiteralPath $rosterPath) {
     $pairs = @()
     foreach ($r in $rows) {
       $un = ([string]$r.$uCol).Trim()
@@ -139,15 +139,16 @@ if (-not $NoRoster) {
         $pairs += ("  [" + (Esc $nm) + ", " + (Esc $un) + "]")
       }
     }
-    $lines = [System.IO.File]::ReadAllLines($idx, [System.Text.Encoding]::UTF8)
+    $lines = [System.IO.File]::ReadAllLines($rosterPath, [System.Text.Encoding]::UTF8)
     $start = -1; $end = -1
     for ($i = 0; $i -lt $lines.Count; $i++) {
-      if ($start -lt 0) { if ($lines[$i] -match "var BUILTIN_ROSTER = \[") { $start = $i } }
+      if ($start -lt 0) { if ($lines[$i] -match "AvatarRace\.roster\s*=\s*\[") { $start = $i } }
       elseif ($lines[$i] -match "^\];\s*$") { $end = $i; break }
     }
     if ($start -lt 0 -or $end -le $start) { $rosterMsg = "没找到内置名单块，跳过" }
     else {
-      $newLines = ("var BUILTIN_ROSTER = [`r`n" + ($pairs -join ",`r`n") + "`r`n];") -split "`r`n"
+      $indent = '  '
+      $newLines = ("  global.AvatarRace.roster = [`r`n" + (($pairs | ForEach-Object { $indent + $_.Trim() }) -join ",`r`n") + "`r`n];") -split "`r`n"
       $all = @()
       if ($start -gt 0) { $all += $lines[0..($start - 1)] }
       $all += $newLines
@@ -156,11 +157,11 @@ if (-not $NoRoster) {
       $newBlock = ($newLines -join "`r`n")
       if ($oldBlock -eq $newBlock) { $rosterMsg = ("内置名单无变化（" + $pairs.Count + " 条）") }
       else {
-        [System.IO.File]::WriteAllLines($idx, $all, (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllLines($rosterPath, $all, (New-Object System.Text.UTF8Encoding($false)))
         $rosterMsg = ("内置名单已更新：" + $pairs.Count + " 条")
       }
     }
-  } else { $rosterMsg = "找不到 index.html，跳过" }
+  } else { $rosterMsg = "找不到 data/roster.js，跳过" }
 }
 
 Write-Host ("头像：" + $ok + " 张下载，" + $fail.Count + " 张失败，" + $skip + " 行跳过") -ForegroundColor Green
@@ -190,7 +191,7 @@ Write-Host ($deskMsg) -ForegroundColor Green
 # ---- 4) 提交推送 ----
 if ($Push) {
   Push-Location $repo
-  git add avatars index.html | Out-Null
+  git add avatars data/roster.js | Out-Null
   if (-not (git status --porcelain)) { Write-Host "没有变化，无需提交（名单和头像都已是最新）" -ForegroundColor Green }
   else {
     git -c i18n.commitEncoding=utf-8 commit -q -m ("sync followers: " + $ok + " avatars, roster " + $rosterMsg)
