@@ -34,12 +34,14 @@ var toastTimer = 0;
 
 var participantStore = AvatarRace.participants.createStore();
 var participants = participantStore.items;
+var setupUi;
 var trackApi = AvatarRace.track;
 function displayName(p){ return AvatarRace.participants.displayName(participantStore, p); }
 function applyDefaultNames(){
   AvatarRace.participants.applyDefaultNames(participantStore);
   for (var i = 0; i < participants.length; i++) {
     if (participants[i].node && participants[i].node.inp) participants[i].node.inp.value = participants[i].name;
+    setupUi.syncCard(participants[i]);
   }
 }
 /* ------------------------------------------------------------------ *
@@ -170,7 +172,7 @@ var started = false;
 function start(){
   if (started) return;
   started = true;
-  AvatarRace.setup.mount({
+  setupUi = AvatarRace.setup.mount({
     state: { participants: participantStore },
     elements: {
       list: listEl,

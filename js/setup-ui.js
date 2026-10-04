@@ -97,9 +97,14 @@
         var file = fileInput.files && fileInput.files[0];
         fileInput.value = '';
         if (!file) return;
+        if (!/^image\//i.test(file.type || '')) {
+          toast('请选择常见图片文件（JPG / PNG / WebP / GIF 等）');
+          return;
+        }
         participants.applyUpload(participant, file).then(function (ok) {
           syncCard(participant);
-          toast(ok ? ('已设置头像：' + participants.displayName(store, participant)) : '无法读取该图片，已回退为默认头像');
+          toast(ok ? ('已设置头像：' + participants.displayName(store, participant))
+            : (file.size > 15 * 1024 * 1024 ? '图片超过 15MB，无法处理，已使用默认头像' : '无法读取该图片，已回退为默认头像'));
         });
       });
       uploadLabel.appendChild(fileInput);

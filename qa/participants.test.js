@@ -54,3 +54,43 @@ test('assigns unique fallback display names to blank participants', function () 
   assert.equal(participants.displayName(store, first), '赛车手 1');
   assert.equal(participants.displayName(store, second), '赛车手 2');
 });
+
+test('clears roster and race choices while preserving the active search query', function () {
+  var store = participants.createStore();
+  var first = participants.add(store, 'Alice');
+  participants.add(store, 'Bob');
+  store.riggedId = first.id;
+  store.gridOrder = [1, 0];
+  store.searchQuery = 'alice';
+
+  participants.clear(store);
+
+  assert.equal(store.items.length, 0);
+  assert.equal(store.riggedId, null);
+  assert.equal(store.gridOrder, null);
+  assert.equal(store.searchQuery, 'alice');
+});
+
+['upload', 'remote'].forEach(function (source) {
+  [
+    { name: 'is not an image', file: { type: 'text/plain', size: 12 } },
+    { name: 'is missing', file: undefined }
+  ].forEach(function (invalidUpload) {
+    test('preserves ' + source + ' avatar when upload file ' + invalidUpload.name, async function () {
+      var participant = participants.add(participants.createStore(), 'Alice');
+      var disc = { width: 192, height: 192 };
+      var dataUrl = source === 'upload' ? 'data:image/png;base64,existing-avatar' : '';
+      var discUrl = source === 'remote' ? 'https://example.test/alice.jpg' : '';
+      participant.avatarSource = source;
+      participant.avatarDisc = disc;
+      participant.avatarDataUrl = dataUrl;
+      participant.avatarDiscUrl = discUrl;
+
+      assert.equal(await participants.applyUpload(participant, invalidUpload.file), false);
+      assert.equal(participant.avatarSource, source);
+      assert.equal(participant.avatarDisc, disc);
+      assert.equal(participant.avatarDataUrl, dataUrl);
+      assert.equal(participant.avatarDiscUrl, discUrl);
+    });
+  });
+});

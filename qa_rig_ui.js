@@ -21,6 +21,7 @@ const scripts = Array.from(html.matchAll(/<script src="([^"]+)"><\/script>/g), m
 assert.ok(scripts.length > 0, '页面应加载外部应用脚本');
 
 // ---------------- 最小 DOM 桩 ----------------
+let canvasDataId = 0;
 class El {
   constructor(tag) {
     this.tagName = String(tag).toUpperCase();
@@ -65,7 +66,10 @@ class El {
   focus() {}
   getBoundingClientRect() { return { width: 1280, height: 800 }; }
   getContext() { return makeCtx2d(); }
-  toDataURL() { return 'data:image/png;base64,AAAA'; }
+  toDataURL() {
+    if (!this._dataUrl) this._dataUrl = 'data:image/png;base64,' + Buffer.from('canvas-' + ++canvasDataId).toString('base64');
+    return this._dataUrl;
+  }
 }
 function makeCtx2d() {
   let self;
@@ -141,6 +145,59 @@ function boot(testMode = true) {
 const click = (el) => el.dispatch('click');
 
 // ---------------- 测试 ----------------
+
+test('开始比赛补全空白姓名后，默认头像预览与比赛头像同步', () => {
+  const { document, participants, race } = boot();
+  const card = participants()[0].node.card;
+  const input = findAll(card, e => e.className === 'name-input')[0];
+  const image = findAll(card, e => e.tagName === 'IMG')[0];
+  input.value = '   ';
+  input.dispatch('input');
+  const oldPreview = image.getAttribute('src');
+  assert.equal(oldPreview, participants()[0].avatarDataUrl);
+
+  click(document.getElementById('startBtn'));
+
+  const participant = participants()[0];
+  assert.equal(race().phase, 'countdown');
+  assert.equal(participant.name, '赛车手 1');
+  assert.equal(input.value, '赛车手 1');
+  assert.notEqual(participant.avatarDataUrl, oldPreview, '补名应重建默认头像');
+  assert.equal(image.getAttribute('src'), participant.avatarDataUrl, '卡片应展示已重建的头像');
+});
+
+test('载入名单和清空后保留搜索，输入框及清除按钮与过滤结果一致', () => {
+  const { document, participants } = boot();
+  const input = document.getElementById('searchInput');
+  const clear = document.getElementById('searchClear');
+  const count = document.getElementById('searchCount');
+  const visible = () => participants().filter(p => !p.node.card.hidden);
+  input.value = 'zzz__no_such_person__zzz';
+  input.dispatch('input');
+  assert.equal(visible().length, 0);
+
+  click(document.getElementById('rosterBtn'));
+
+  assert.ok(participants().length > 100);
+  assert.equal(input.value, 'zzz__no_such_person__zzz');
+  assert.equal(visible().length, 0, '新名单应继续使用输入框中的搜索词');
+  assert.equal(count.textContent, '0 / ' + participants().length);
+  assert.equal(clear.hidden, false);
+
+  click(document.getElementById('clearBtn'));
+  assert.equal(document.getElementById('searchBar').hidden, true);
+  assert.equal(input.value, 'zzz__no_such_person__zzz');
+  click(document.getElementById('sampleBtn'));
+  assert.equal(visible().length, 0);
+  assert.equal(count.textContent, '0 / 6');
+  assert.equal(clear.hidden, false);
+
+  click(clear);
+  assert.equal(input.value, '');
+  assert.equal(visible().length, 6);
+  assert.equal(clear.hidden, true);
+  assert.equal(count.textContent, '');
+});
 
 test('调试快照不会修改应用状态，生产模式没有测试命令', () => {
   const { ctx, document } = boot(false);

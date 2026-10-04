@@ -93,7 +93,6 @@
     store.items.length = 0;
     store.gridOrder = null;
     store.riggedId = null;
-    store.searchQuery = '';
   }
 
   function shuffle(store, random) {
@@ -258,7 +257,8 @@
   }
 
   function applyUpload(participant, file) {
-    if (!file || !/^image\//i.test(file.type || '') || file.size > 15 * 1024 * 1024) {
+    if (!file || !/^image\//i.test(file.type || '')) return Promise.resolve(false);
+    if (file.size > 15 * 1024 * 1024) {
       setDefaultAvatar(participant);
       return Promise.resolve(false);
     }
