@@ -1,8 +1,10 @@
-const { chromium } = require(process.env.PW_PATH);
-const URL = 'file:///C:/Users/Administrator/dragen%20dance/avatar-racing/index.html';
+const { getChromium, pageUrl, assertNoPageErrors } = require('./qa/browser-helpers');
+const chromium = getChromium();
+const URL = pageUrl;
 function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
 (async function(){
   const browser = await chromium.launch();
+  try {
   const errors = [];
   for (let run=1; run<=3; run++){
     const page = await browser.newPage({ viewport:{ width:412, height:840 }, deviceScaleFactor:2 });
@@ -14,13 +16,14 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     await page.click('#startBtn');
     let ok = false;
     for (let i=0;i<80;i++){
-      const s = await page.evaluate(function(){ return window.__avatarRace.race.phase; });
+      const s = await page.evaluate(function(){ return window.__avatarRace.getState().phase; });
       if (s === 'results' || s === 'ending'){ ok = true; break; }
       await page.waitForTimeout(500);
     }
+    if (!ok) throw new Error('Race did not settle within 40 seconds');
     const res = await page.evaluate(function(){
-      var r = window.__avatarRace.race;
-      var ts = r.cars.filter(function(c){ return c.finished; }).map(function(c){ return { n:c.p.name, t:c.finishTime*1000 }; }).sort(function(a,b){ return a.t-b.t; });
+      var api=window.__avatarRace, r=api.getState(), cars=api.getCars();
+      var ts = cars.filter(function(c){ return c.finished; }).map(function(c){ return { n:c.name, t:c.finishTime*1000 }; }).sort(function(a,b){ return a.t-b.t; });
       var gaps = []; for (var i=1;i<ts.length;i++) gaps.push(+(ts[i].t - ts[i-1].t).toFixed(1));
       var rounded = ts.map(function(x){ return Math.round(x.t); });
       var dupes = rounded.length - new Set(rounded).size;
@@ -29,6 +32,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     P('RUN'+run, res);
     await page.close();
   }
+  assertNoPageErrors(errors);
   P('ERRORS', errors);
-  await browser.close();
-})().catch(function(e){ P('FATAL', e.message); process.exit(1); });
+  } finally { await browser.close(); }
+})().catch(function(e){ P('FATAL', e.message); process.exitCode = 1; });

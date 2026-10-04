@@ -1,9 +1,11 @@
-const { chromium } = require(process.env.PW_PATH);
-const URL = 'file:///C:/Users/Administrator/dragen%20dance/avatar-racing/index.html';
-const OUT = 'C:/Users/Administrator/dragen dance/avatar-racing/qa';
+const { getChromium, pageUrl, ensureOutputDir, outputPath, assertNoPageErrors } = require('./qa/browser-helpers');
+const chromium = getChromium();
+const URL = pageUrl;
+const OUT = ensureOutputDir();
 function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
 (async function(){
   const browser = await chromium.launch();
+  try {
   const errors = [];
   const page = await browser.newPage({ viewport:{ width:412, height:840 }, deviceScaleFactor:2 });
   page.on('pageerror', function(e){ errors.push('pageerror: ' + e.message); });
@@ -17,7 +19,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
   const t0 = Date.now();
   let shots = 0, lastShot = 0;
   for (let i=0;i<250;i++){
-    const st = await page.evaluate(function(){ var r = window.__avatarRace.race; if (r.phase!=='racing'&&r.phase!=='waiting') return null; return { t:+r.elapsed.toFixed(1), names:(r.labelNames||[]).slice().sort() }; });
+    const st = await page.evaluate(function(){ var api=window.__avatarRace, r=api.getState(); if (r.phase!=='racing'&&r.phase!=='waiting') return null; return { t:+r.elapsed.toFixed(1), names:(r.labelNames||[]).slice().sort() }; });
     if (!st){ if (samples>0) break; await page.waitForTimeout(100); continue; }
     samples++;
     if (prev){
@@ -28,10 +30,12 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     }
     prev = st.names;
     const el = Date.now()-t0;
-    if (st.t > 10 && st.t < 14 && el-lastShot > 300 && shots < 4){ lastShot = el; await page.screenshot({ path: OUT + '/label_' + (++shots) + '.png' }); }
+    if (st.t > 10 && st.t < 14 && el-lastShot > 300 && shots < 4){ lastShot = el; await page.screenshot({ path: outputPath('label_' + (++shots) + '.png') }); }
     await page.waitForTimeout(80);
   }
+  if (!samples) throw new Error('No racing frames sampled');
   P('LABELS', { samples: samples, changesPerSec: +(((added+removed)/samples)*12.5).toFixed(2), labelAddsPerSec: +((added/samples)*12.5).toFixed(2), labelRemovesPerSec: +((removed/samples)*12.5).toFixed(2), maxChurnInOneFrame: maxChurn, shots: shots });
+  assertNoPageErrors(errors);
   P('ERRORS', errors);
-  await browser.close();
-})().catch(function(e){ P('FATAL', e.message); process.exit(1); });
+  } finally { await browser.close(); }
+})().catch(function(e){ P('FATAL', e.message); process.exitCode = 1; });

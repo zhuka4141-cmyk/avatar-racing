@@ -1,5 +1,5 @@
 ﻿# 同步 Instagram 粉丝名单到网站：头像下载 + 内置名单更新 + 可选提交推送
-#   tools\fetch-avatars.cmd                          # 双击：自动用 Downloads 里最新的粉丝 CSV，同步并推送
+#   tools\fetch-avatars.cmd                          # 双击：自动用 Downloads 里最新的粉丝 CSV，同步文件
 #   tools\fetch-avatars.cmd D:\xx.xlsx              # 指定 CSV / xlsx（导出工具的 xlsx 可直接用）
 #   tools\fetch-avatars.cmd D:\xx.csv -NoPush       # 只同步不提交
 param(
@@ -8,6 +8,7 @@ param(
   [string]$OutDir = "",
   [string]$RepoRoot = "",
   [switch]$Push,
+  [switch]$NoPush,
   [switch]$NoRoster
 )
 $ErrorActionPreference = "Stop"
@@ -189,7 +190,7 @@ if ($desk -and (Test-Path -LiteralPath $desk)) {
 Write-Host ($deskMsg) -ForegroundColor Green
 
 # ---- 4) 提交推送 ----
-if ($Push) {
+if ($Push -and -not $NoPush) {
   Push-Location $repo
   git add avatars data/roster.js | Out-Null
   if (-not (git status --porcelain)) { Write-Host "没有变化，无需提交（名单和头像都已是最新）" -ForegroundColor Green }

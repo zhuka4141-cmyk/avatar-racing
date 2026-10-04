@@ -1,8 +1,13 @@
-const { chromium } = require(process.env.PW_PATH);
-const URL = 'file:///C:/Users/Administrator/dragen%20dance/avatar-racing/index.html';
+const { getChromium, pageUrl, assertNoPageErrors } = require('./qa/browser-helpers');
+const chromium = getChromium();
+const URL = pageUrl;
 (async function(){
   const browser = await chromium.launch();
+  try {
   const page = await browser.newPage({ viewport:{ width:412, height:840 } });
+  const errors = [];
+  page.on('pageerror', function(e){ errors.push('pageerror: ' + e.message); });
+  page.on('console', function(m){ if (m.type()==='error') errors.push('console: ' + m.text()); });
   await page.goto(URL);
   const prof = await page.evaluate(function(){
     var t = window.__avatarRace.buildTrack(12345, 600);
@@ -14,5 +19,6 @@ const URL = 'file:///C:/Users/Administrator/dragen%20dance/avatar-racing/index.h
   });
   console.log('pts', prof.len, 'raceLen', prof.raceLen, 'turns', prof.turns);
   console.log(prof.prof);
-  await browser.close();
-})().catch(function(e){ console.log('FATAL ' + e.message); process.exit(1); });
+  assertNoPageErrors(errors);
+  } finally { await browser.close(); }
+})().catch(function(e){ console.log('FATAL ' + e.message); process.exitCode = 1; });

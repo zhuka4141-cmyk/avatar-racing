@@ -1,19 +1,19 @@
-// PW_PATH=/path/to/playwright-core node qa_start.js [screenshot-directory]
-const { chromium } = require(process.env.PW_PATH || 'playwright-core');
+// PW_PATH=/path/to/playwright-core QA_OUT=qa-start node qa_start.js
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
-const { pathToFileURL } = require('node:url');
-const out = path.resolve(process.argv[2] || path.join(__dirname, 'qa-start'));
-const url = pathToFileURL(path.join(__dirname, 'index.html')).href;
+const { getChromium, pageUrl, outputDir } = require('./qa/browser-helpers');
+const chromium = getChromium();
+const out = path.resolve(process.argv[2] || outputDir);
+const url = pageUrl;
 fs.mkdirSync(out, { recursive:true });
 async function state(page) {
   return page.evaluate(() => {
-    const r = window.__avatarRace.race;
+    const api = window.__avatarRace, r = api.getState(), cars = api.getCars();
     return { phase:r.phase, elapsed:r.elapsed, wait:r.waitingElapsed,
-      finished:r.cars.filter(c => c.finished).length, cam:r.cam.s,
-      finish:r.track.raceLen, results:r.results.length,
-      cars:r.cars.map(c => ({ id:c.p.id, s:c.s, v:c.v, lateral:c.lateral, broken:c.broken })) };
+      finished:cars.filter(c => c.finished).length, cam:r.cam.s,
+      finish:r.raceLen, results:r.results.length,
+      cars:cars.map(c => ({ id:c.id, s:c.s, v:c.v, lateral:c.lateral, broken:c.broken })) };
   });
 }
 (async () => {
@@ -47,7 +47,8 @@ async function state(page) {
       assert.ok(launched.cars.every((c,i) => c.s-grid.cars[i].s > 100 && !c.broken));
       await page.screenshot({ path:path.join(out,cfg.name+'-launch.png') });
       if (cfg.timeout) await page.evaluate(() => {
-        window.__avatarRace.race.cars.slice(1).forEach(c => { c.baseSpeed *= 0.1; });
+        const api = window.__avatarRace;
+        api.getCars().forEach((car, index) => { if (index > 0) api.setCarSpeed(index, car.baseSpeed * 0.1); });
       });
       await page.clock.runFor(6800);
       await page.screenshot({ path:path.join(out,cfg.name+'-race.png') });
@@ -66,9 +67,9 @@ async function state(page) {
       }
       assert.ok(['ending','results'].includes(settled.phase));
       assert.equal(settled.results,cfg.count);
-      assert.ok(settled.finished >= Math.min(10,cfg.count) || settled.wait >= 5);
-      assert.ok(settled.wait <= 5.04);
-      if (cfg.timeout) assert.ok(settled.finished < 10 && settled.wait >= 5);
+      assert.ok(settled.finished === cfg.count || settled.wait >= 6);
+      assert.ok(settled.wait <= 6.04);
+      if (cfg.timeout) assert.ok(settled.finished < cfg.count && settled.wait >= 6);
       await page.clock.runFor(2500);
       const finishView = await state(page);
       assert.ok(Math.abs(finishView.cam-finishView.finish+40) < 1, 'camera not locked at finish');

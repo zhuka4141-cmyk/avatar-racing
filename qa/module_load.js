@@ -12,7 +12,11 @@ var context = vm.createContext({
   console: console
 });
 
-['js/namespace.js', 'js/config.js', 'js/math.js'].forEach(function (relativePath) {
+[
+  'js/namespace.js', 'js/config.js', 'js/math.js', 'data/roster.js',
+  'js/participants.js', 'js/track.js', 'js/physics.js', 'js/render.js',
+  'js/results.js', 'js/debug.js', 'js/setup-ui.js'
+].forEach(function (relativePath) {
   var filename = path.join(root, relativePath);
   var source = fs.readFileSync(filename, 'utf8');
   vm.runInContext(source, context, { filename: filename });
@@ -41,4 +45,12 @@ assert.equal(api.math.clamp(5, 0, 3), 3);
 assert.equal(api.math.lerp(0, 10, 0.25), 2.5);
 assert.equal(api.math.fmtTime(1.25), '1.250s');
 assert.equal(api.math.dist({ x: 0, y: 0 }, { x: 3, y: 4 }), 5);
+assert.ok(Array.isArray(api.roster), 'roster should be present');
+['participants', 'track', 'physics', 'render', 'results', 'debug', 'setup'].forEach(function (name) {
+  assert.ok(api[name] && typeof api[name] === 'object', 'missing module: ' + name);
+});
+assert.equal(typeof api.render.create, 'function');
+assert.equal(typeof api.results.show, 'function');
+assert.equal(typeof api.debug.install, 'function');
+assert.equal(typeof api.setup.mount, 'function');
 console.log('module load ok');

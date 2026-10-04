@@ -1,8 +1,10 @@
-const { chromium } = require(process.env.PW_PATH);
-const URL = 'file:///C:/Users/Administrator/dragen%20dance/avatar-racing/index.html';
+const { getChromium, pageUrl, assertNoPageErrors } = require('./qa/browser-helpers');
+const chromium = getChromium();
+const URL = pageUrl;
 function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
 (async function(){
   const browser = await chromium.launch();
+  try {
   const errors = [];
   for (let run=1; run<=3; run++){
     const page = await browser.newPage({ viewport:{ width:412, height:840 }, deviceScaleFactor:2 });
@@ -18,7 +20,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     const rankAt5 = {};
     let t5done = false;
     for (let i=0;i<200;i++){
-      const st = await page.evaluate(function(){ var r=window.__avatarRace.race; if(r.phase!=='racing'&&r.phase!=='waiting') return null; return { t:+r.elapsed.toFixed(1), order:r.ranked.map(function(c){return c.p.id;}), catchup:r.cars.map(function(c){return { id:c.p.id, cu:+(c.catchup||1).toFixed(3) }; }) }; });
+      const st = await page.evaluate(function(){ var api=window.__avatarRace, r=api.getState(), cars=api.getCars(); if(r.phase!=='racing'&&r.phase!=='waiting') return null; return { t:+r.elapsed.toFixed(1), order:r.rankedIds.slice(), catchup:cars.map(function(c){return { id:c.id, cu:+(c.catchup||1).toFixed(3) }; }) }; });
       if (!st){ if (samples>0) break; await page.waitForTimeout(200); continue; }
       samples++;
       const pos={}; st.order.forEach(function(id,ix){pos[id]=ix+1;});
@@ -29,7 +31,8 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
       if (!t5done && st.t >= 5){ t5done = true; st.order.forEach(function(id,ix){ rankAt5[id]=ix+1; }); }
       await page.waitForTimeout(250);
     }
-    const res = await page.evaluate(function(){ var r=window.__avatarRace.race; return { times: r.cars.map(function(c){return c.finishTime?+c.finishTime.toFixed(2):null;}), order: r.ranked.map(function(c){return c.p.id;}), names: r.cars.map(function(c){return { id:c.p.id, n:c.p.name }; }) }; });
+    if (!samples) throw new Error('No racing frames sampled');
+    const res = await page.evaluate(function(){ var api=window.__avatarRace, r=api.getState(), cars=api.getCars(); return { times: cars.map(function(c){return c.finishTime?+c.finishTime.toFixed(2):null;}), order: r.rankedIds.slice(), names: cars.map(function(c){return { id:c.id, n:c.name }; }) }; });
     const times = res.times.filter(function(x){return x;}).sort(function(a,b){return a-b;});
     const nameOf = {}; res.names.forEach(function(o){ nameOf[o.id]=o.n; });
     const winnerId = res.order[0];
@@ -38,6 +41,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     P('RUN'+run, { samples: samples, rankSwaps: swaps, swapsPerSec: +(swaps/(samples*0.25)).toFixed(1), leadChanges: leads, winner: nameOf[winnerId], winnerRankAt5s: rankAt5[winnerId] || null, carsGaining3Plus: gained, finishFirst: times[0], finishLast: times[times.length-1], spread: +(times[times.length-1]-times[0]).toFixed(2), avgCatchupByRank: avgByRank.join(' ') });
     await page.close();
   }
+  assertNoPageErrors(errors);
   P('ERRORS', errors);
-  await browser.close();
-})().catch(function(e){ P('FATAL', e.message); process.exit(1); });
+  } finally { await browser.close(); }
+})().catch(function(e){ P('FATAL', e.message); process.exitCode = 1; });

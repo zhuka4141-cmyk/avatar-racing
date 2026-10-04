@@ -1,9 +1,11 @@
-const { chromium } = require(process.env.PW_PATH);
-const URL = 'file:///C:/Users/Administrator/dragen%20dance/avatar-racing/index.html';
-const OUT = 'C:/Users/Administrator/dragen dance/avatar-racing/qa';
+const { getChromium, pageUrl, ensureOutputDir, outputPath, assertNoPageErrors } = require('./qa/browser-helpers');
+const chromium = getChromium();
+const URL = pageUrl;
+const OUT = ensureOutputDir();
 function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
 (async function(){
   const browser = await chromium.launch();
+  try {
   const errors = [];
   const page = await browser.newPage({ viewport:{ width:412, height:840 }, deviceScaleFactor:2 });
   page.on('pageerror', function(e){ errors.push('pageerror: ' + e.message); });
@@ -33,27 +35,28 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
   var shots = 0, prevShot = -10;
   for (let i=0;i<70;i++){
     const st = await page.evaluate(function(){
-      var r = window.__avatarRace.race;
-      if (!r.track) return { phase:r.phase };
-      var a = r.track.pts, lo=0, hi=a.length-1, cs=r.cam.s;
+      var api=window.__avatarRace, r=api.getState(), cars=api.getCars(), track=api.getTrack();
+      if (!track) return { phase:r.phase };
+      var a = track.pts, lo=0, hi=a.length-1, cs=r.cam.s;
       while (hi-lo>1){ var mid=(lo+hi)>>1; if (a[mid].s<=cs) lo=mid; else hi=mid; }
-      var pA = r.track.pts[Math.max(0,lo-5)], pB = r.track.pts[lo], pC = r.track.pts[Math.min(a.length-1,lo+5)];
+      var pA = track.pts[Math.max(0,lo-5)], pB = track.pts[lo], pC = track.pts[Math.min(a.length-1,lo+5)];
       var v1x=pB.x-pA.x, v1y=pB.y-pA.y, v2x=pC.x-pB.x, v2y=pC.y-pB.y;
       var l1=Math.hypot(v1x,v1y), l2=Math.hypot(v2x,v2y);
       var turn=Math.abs(Math.atan2(v1x*v2y-v1y*v2x, v1x*v2x+v1y*v2y));
       var R = turn>1e-9 ? ((l1+l2)/2)/turn : 99999;
-      var lead = r.ranked[0];
+      var lead = cars.find(function(c){return c.id===r.rankedIds[0];});
       return { phase:r.phase, R:+R.toFixed(0), t:+r.elapsed.toFixed(1), leadProg:+(lead?lead.progress:0).toFixed(3) };
     });
     if (st.phase !== 'racing' && st.phase !== 'waiting' && st.phase !== 'ending') break;
     if (st.R && st.R < 520 && (i - prevShot) > 4){
       prevShot = i;
-      await page.screenshot({ path: OUT + '/hairpin_' + (++shots) + '.png' });
+      await page.screenshot({ path: outputPath('hairpin_' + (++shots) + '.png') });
       P('SHOT' + shots, st);
     }
     await page.waitForTimeout(300);
   }
   P('SHOTS', shots);
+  assertNoPageErrors(errors);
   P('ERRORS', errors);
-  await browser.close();
-})().catch(function(e){ P('FATAL', e.message); process.exit(1); });
+  } finally { await browser.close(); }
+})().catch(function(e){ P('FATAL', e.message); process.exitCode = 1; });

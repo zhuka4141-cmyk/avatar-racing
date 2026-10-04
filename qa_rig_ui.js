@@ -1,7 +1,7 @@
 'use strict';
 // UI 层验证：node --test qa_rig_ui.js
 //
-// 这个文件不切源码片段，而是用最小 DOM 桩把**完整的 index.html 脚本**跑起来，
+// 这个文件不切源码片段，而是用最小 DOM 桩按 index.html 的顺序加载外部脚本，
 // 然后只通过真实入口（点击卡片上的按钮、点「开始比赛」）驱动，
 // 并且真的把 requestAnimationFrame 主循环一帧帧推完。
 // 验证的是「UI → 发车格 → 物理 → 结算」整条链路。
@@ -17,7 +17,8 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const scripts = Array.from(html.matchAll(/<script src="([^"]+)"><\/script>/g), match => match[1]);
+assert.ok(scripts.length > 0, '页面应加载外部应用脚本');
 
 // ---------------- 最小 DOM 桩 ----------------
 class El {
@@ -44,7 +45,11 @@ class El {
       add: (...c) => c.forEach(x => cls.add(x)),
       remove: (...c) => c.forEach(x => cls.delete(x)),
       contains: c => cls.has(c),
-      toggle: c => (cls.has(c) ? (cls.delete(c), false) : (cls.add(c), true))
+      toggle: (c, force) => {
+        const enabled = force === undefined ? !cls.has(c) : !!force;
+        if (enabled) cls.add(c); else cls.delete(c);
+        return enabled;
+      }
     };
   }
   get textContent() { return this._text; }
@@ -85,9 +90,10 @@ function findAll(el, pred, out) {
 }
 function byText(root, txt) { return findAll(root, e => e._text === txt)[0]; }
 
-function boot() {
+function boot(testMode = true) {
   const byId = new Map();
   const rafQueue = [];
+  const errors = [];
   let vnow = 0;
   const document = {
     createElement: t => new El(t),
@@ -96,18 +102,29 @@ function boot() {
     body: new El('body')
   };
   const ctx = vm.createContext({
-    document, window: { devicePixelRatio: 1, addEventListener() {} },
+    document, window: { document, location: { search: testMode ? '?test=1' : '' }, devicePixelRatio: 1, addEventListener() {} },
     requestAnimationFrame: fn => { rafQueue.push(fn); return rafQueue.length; },
     setTimeout: () => 0, clearTimeout() {},
     URL: { createObjectURL: () => 'blob:stub', revokeObjectURL() {} },
     FileReader: class { readAsText() {} },
     Image: class extends El { constructor() { super('img'); } },
-    console
+    console: Object.assign({}, console, { error: (...args) => errors.push(args) })
   });
-  vm.runInContext(script, ctx, { filename: 'index.html<script>' });
+  for (const relativePath of scripts) {
+    const filename = path.join(__dirname, relativePath);
+    vm.runInContext(fs.readFileSync(filename, 'utf8'), ctx, { filename });
+  }
 
-  const participants = () => ctx.window.__avatarRace.participants;
-  const race = () => ctx.window.__avatarRace.race;
+  const participants = () => {
+    const cards = document.getElementById('list').children;
+    return ctx.window.__avatarRace.getParticipants().map((participant, index) => {
+      const card = cards[index];
+      return Object.assign(participant, {
+        node: { card, rigBtn: findAll(card, e => /指定/.test(e.textContent))[0] }
+      });
+    });
+  };
+  const race = () => Object.assign(ctx.window.__avatarRace.getState(), { cars: ctx.window.__avatarRace.getCars() });
   // 界面上被标记为「已指定」的人数（0 或 1）
   const marked = () => participants().filter(p => p.node.rigBtn.classList.contains('rig-on')).length;
   const pump = (maxFrames = 12000) => {
@@ -119,11 +136,58 @@ function boot() {
     }
     return race().phase === 'results';
   };
-  return { ctx, document, participants, race, marked, pump };
+  return { ctx, document, participants, race, marked, pump, errors };
 }
 const click = (el) => el.dispatch('click');
 
 // ---------------- 测试 ----------------
+
+test('调试快照不会修改应用状态，生产模式没有测试命令', () => {
+  const { ctx, document } = boot(false);
+  const api = ctx.window.__avatarRace;
+  assert.equal(api.race, undefined);
+  assert.equal(api.participants, undefined);
+  assert.equal(api.setCarSpeed, undefined);
+  assert.equal(api.setPhase, undefined);
+  const people = api.getParticipants();
+  const originalName = people[0].name;
+  people[0].name = 'changed snapshot';
+  assert.equal(api.getParticipants()[0].name, originalName);
+  ctx.window.AvatarRace.app.start();
+  assert.equal(api.getParticipants().length, 2, '重复启动不应重复绑定或添加参赛者');
+  click(document.getElementById('startBtn'));
+  const state = api.getState();
+  const cars = api.getCars();
+  const track = api.getTrack();
+  const originalS = cars[0].s;
+  const originalX = track.pts[0].x;
+  state.cam.s = 999999;
+  cars[0].s = 999999;
+  track.pts[0].x = 999999;
+  assert.equal(api.getCars()[0].s, originalS);
+  assert.equal(api.getState().cam.s, originalS);
+  assert.equal(api.getTrack().pts[0].x, originalX);
+});
+
+test('普通模式出错后停止步进，返回设置并重开后恢复；测试模式重抛', () => {
+  const { ctx, document, race, pump, errors } = boot(false);
+  click(document.getElementById('startBtn'));
+  pump(300);
+  assert.equal(race().phase, 'racing');
+  const elapsed = race().elapsed;
+  ctx.window.AvatarRace.app.reportError(new Error('simulated renderer failure'), 'render');
+  pump(120);
+  assert.equal(race().elapsed, elapsed);
+  assert.equal(errors.length, 1);
+  assert.equal(document.getElementById('toast').hidden, false);
+  click(document.getElementById('toSetupBtn'));
+  click(document.getElementById('startBtn'));
+  pump(300);
+  assert.equal(race().phase, 'racing');
+  assert.ok(race().elapsed > 0);
+  const testBoot = boot();
+  assert.throws(() => testBoot.ctx.window.AvatarRace.app.reportError(new Error('test failure'), 'render'), /test failure/);
+});
 
 test('加载完整脚本后，每位参赛者的卡片上都有「指定夺冠」按钮', () => {
   const { participants, marked } = boot();
@@ -168,7 +232,10 @@ test('删除被内定的人之后，内定状态不会残留到下一局', () =>
   assert.equal(participants().length, 1, '被内定的人应该已被删除');
 
   // 行为验证：再开一局，不应该有任何车带内定标记
+  click(document.getElementById('addBtn'));
   click(document.getElementById('startBtn'));
+  assert.equal(race().phase, 'countdown');
+  assert.equal(race().cars.length, 2);
   assert.ok(race().cars.every(c => !c.rigged), '删掉被内定的人之后，新一局不应残留内定车');
 });
 
@@ -205,7 +272,7 @@ test('端到端：内定的人从第一排发车，跑完整局后拿到第一',
 
   // 发车格：第一排的 s == -70（s = -70 - row*spacing）
   assert.equal(r.cars.length, 6);
-  const targetCar = r.cars.find(c => c.p.id === target.id);
+  const targetCar = r.cars.find(c => c.id === target.id);
   assert.ok(targetCar, '内定的人应该在赛道上');
   assert.equal(targetCar.s, -70, '内定的人必须从第一排发车');
   assert.equal(targetCar.rigged, true, '赛车里应带上内定标记');
@@ -248,7 +315,7 @@ test('内定的人每局都从第一排出发，但位置会变（不会每次�
   for (let i = 0; i < ROUNDS; i++) {
     click(document.getElementById('startBtn'));
     const r = race();
-    const car = r.cars.find(c => c.p.id === target.id);
+    const car = r.cars.find(c => c.id === target.id);
     assert.equal(car.s, -70, '第 ' + (i + 1) + ' 局没有从第一排发车');
     assert.equal(r.cars.filter(c => c.rigged).length, 1, '第 ' + (i + 1) + ' 局内定车数量不对');
     seen.add(Math.round(car.lateral));

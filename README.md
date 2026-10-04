@@ -9,34 +9,58 @@
 
 ## 运行
 
-- 直接双击 `avatar-racing/index.html`（file:// 打开即可，页面不发起任何网络请求）。
-- 或用任意静态服务器：`python -m http.server 8080`，访问 `http://localhost:8080/avatar-racing/`。
+- 直接双击 `index.html`（`file://` 打开即可；内置名单和仓库内头像不需要网络）。
+- 或在仓库根目录运行静态服务器：`python -m http.server 8080`，访问 `http://localhost:8080/`。
+- 导入 CSV 时如果本地 `avatars/<用户名>.jpg` 不存在，页面才会尝试 CSV 提供的远程头像地址；这一步可能需要网络。
 - 头像只在当前页面会话的 Canvas 缓存中存在，不会上传。
 
 ## 文件
 
 | 文件 | 说明 |
 | --- | --- |
-| `index.html` | 全部 HTML / CSS / JavaScript（单文件交付） |
+| `index.html` | 页面结构和脚本入口 |
+| `styles.css` | 页面样式 |
+| `js/namespace.js`、`config.js`、`math.js` | 命名空间、常量与公共数学函数 |
+| `data/roster.js` | 内置名单；同步工具只更新这个数据文件 |
+| `js/participants.js` | 参赛者集合、CSV 解析、头像读取与回退 |
+| `js/setup-ui.js` | 卡片、搜索、导入与设置页事件 |
+| `js/track.js`、`physics.js` | 赛道与可在 Node 中运行的确定性比赛引擎；不依赖 DOM |
+| `js/render.js`、`results.js` | Canvas、相机、HUD 和冻结成绩面板 |
+| `js/app.js`、`debug.js` | 启动、主循环、错误恢复和复制快照调试接口 |
 | `qa_test.js` | 主流程回归：设置页、上传、倒计时、整场比赛、结算、再来一局、35/120 车压力 |
-| `qa_rules.js` | 结算规则专项：第 10 名冲线即结算、5 秒等待超时冻结结算 |
+| `qa_rules.js` | 结算规则专项：等待全部冲线或 6 秒超时，结算后名次快照不再变化 |
 | `qa_end.js` | 收尾行为专项：结算后继续播放、车辆驶离视野、名次列表可滑动 |
 | `qa_overtake.js` | 超车频次统计（名次交换次数 / 领跑更替次数） |
 | `avatars/` | 粉丝头像本地副本（135 张，602 KB）：CSV 导入时优先使用，缺失时自动回退到 CSV 里的远程地址 |
 | `.nojekyll` | **必须保留**：关掉 GitHub Pages 的 Jekyll。否则下划线开头的文件不会被发布 —— 实测 6 个 `_` 开头的用户名（`_.yunggg._` 等）头像在线上直接 404 |
 | `qa/*.png` | 上述脚本产出的截图证据 |
 
-运行 QA（需要 playwright-core）：
+运行浏览器 QA（需要 `playwright-core`）。脚本从仓库根目录解析 `index.html`，不依赖当前工作目录或某台电脑的绝对路径。`PW_PATH` 可选，用来指定已有的 `playwright-core` 目录；`QA_OUT` 可选，用来指定截图和临时输入文件目录（默认 `qa/`）：
 
 ```powershell
-$env:PW_PATH='C:\Users\Administrator\.dsh\skills\playwright\node_modules\playwright-core'
-node avatar-racing/qa_test.js
-node avatar-racing/qa_rules.js
-node avatar-racing/qa_end.js
-node avatar-racing/qa_overtake.js
+$env:PW_PATH='C:\path\to\playwright-core'
+$env:QA_OUT="$PWD\qa-out"
+node qa_test.js
+node qa_rules.js
+node qa_end.js
+node qa_overtake.js
 ```
 
-页面暴露只读调试句柄 `window.__avatarRace = { race, participants, buildTrack }`，供 QA 脚本读取内部状态。
+`qa_test.js` 在比赛中按 `Escape` 返回设置页；成绩面板的返回按钮仍为 `#toSetupBtn`。脚本不再使用旧的返回按钮或提示元素选择器。没有安装 Playwright 时仍可运行 Node 静态和物理检查，但浏览器回归应标记为未验证。
+
+页面通过 `window.__avatarRace.getState()`、`getCars()`、`getParticipants()`、`getTrack()` 和 `buildTrack(seed, runoff)` 提供调试信息；状态、车辆、参赛者和当前赛道方法返回快照，不暴露可变的比赛或参赛者对象。浏览器 QA 使用 `?test=1`，才可调用测试用的 `setCarSpeed(index, speed)` 和 `setPhase(phase)`。
+
+不需要浏览器的回归命令：
+
+```powershell
+node --test qa/participants.test.js qa_rig_ui.js
+node qa/module_load.js
+node qa/debug_snapshots.js
+node qa_physics.js
+node qa_rig.js
+```
+
+UI 回归使用最小 DOM 桩按页面声明顺序加载所有模块，覆盖真实按钮、主循环和成绩面板；它不替代浏览器视觉与性能回归。
 
 ## 关键实现
 
@@ -45,8 +69,8 @@ node avatar-racing/qa_overtake.js
 ```
 setup -> countdown(3.9s，显示 3/2/1/开始) -> racing
 racing  --第一名冲线--> waiting（记录 leaderFinishAt，镜头目标切到终点线）
-waiting --finishers >= min(10, 参赛人数)--> ending
-waiting --waitingElapsed >= 5s---------> ending（按当前进度记录名次）
+waiting --全部有效车辆冲线-----------> ending
+waiting --waitingElapsed >= 6s---------> ending（按当前进度记录名次）
 ending  --全部车辆离开视野 或 12s------> results
 results --再来一局--> countdown（保留参赛者资料，重建赛道/种子/随机参数）
 ```
@@ -70,10 +94,17 @@ results --再来一局--> countdown（保留参赛者资料，重建赛道/种�
 1. 自动在「下载 / Downloads」里找**最新**那份粉丝导出文件（文件名含 `follower` / `IGFollow`，`.csv` 与 `.xlsx` 都支持）；也可指定：`fetch-avatars.cmd D:\xx.xlsx`
    - `.xlsx` 直接解析（解压后读 `sheet1.xml`，`str` / `inlineStr` / 共享字符串三种单元格全覆盖），不用先转 CSV；列名识别放宽到 `Avatar pic` / `Profile link` 这类写法，导出工具最后那行水印（用户名为空）会自动跳过
 2. 下载全部头像到 `avatars/<用户名>.jpg` —— 先下到临时文件、**成功才覆盖**，失败绝不动已有文件
-3. 同步更新 `index.html` 里「载入粉丝名单」按钮用的内置名单（按行定位替换，可反复运行）
-4. 自动 `git add` + `commit` + `push`，GitHub Pages 约 1 分钟更新；**没有变化时不会产生空提交**
+3. 同步更新 `data/roster.js` 里「载入粉丝名单」按钮使用的内置名单（可反复运行）
+4. 只有显式传入 `-Push` 才会执行 `git add` + `commit` + `push`，GitHub Pages 约 1 分钟更新；没有变化时不会产生空提交
 
-加 `-NoPush` 只同步不提交。实测：137 行 xlsx（含 1 行工具水印）→ **136 张全部成功 / 0 失败 / 1 行跳过**；连跑两次第二次报「内置名单无变化」；生成结果与手工维护版本逐字节一致（含 `&` 等字符）。
+加 `-NoPush` 只同步文件，绝不提交或推送；不带 `-Push` 也不会提交或推送。实测：137 行 xlsx（含 1 行工具水印）→ **136 张全部成功 / 0 失败 / 1 行跳过**；连跑两次第二次报「内置名单无变化」；生成结果与手工维护版本逐字节一致（含 `&` 等字符）。
+
+示例：
+
+```powershell
+tools\fetch-avatars.cmd D:\followers.xlsx -NoPush
+tools\fetch-avatars.cmd D:\followers.xlsx -Push
+```
 
 **只想临时用一次**：游戏页「导入 CSV 名单」→ 头像优先取 `avatars/<用户名>.jpg`，缺的自动回退 CSV 里的远程地址，再缺用彩色首字母默认头像。
 
@@ -128,7 +159,7 @@ results --再来一局--> countdown（保留参赛者资料，重建赛道/种�
 
 相同 5 个种子、每局 15 车，排除距离小于 30 单位的近乎并列抖动后，原版平均每局 71.8 次前后关系交换，修改后 139.2 次；修改后第一名用时 19.77–20.62 秒。可用 `node qa_physics.js --baseline` 在原提交上重现失败。
 
-浏览器回归：设置 `PW_PATH` 为现有 `playwright-core` 路径，运行 `node qa_start.js [截图目录]`。脚本使用本文件所在目录的网页，无硬编码项目路径；覆盖手机 15 车、桌面 8 车、手机 120 车前 8 秒、12 车慢车超时、终点镜头、成绩列表和重开。此次均通过，页面错误数为 0。超过 120 车仅验证了起跑模拟，未声称浏览器全程性能保证。
+浏览器回归：设置 `PW_PATH` 为现有 `playwright-core` 路径，运行 `QA_OUT=qa-out node qa_start.js`（Windows PowerShell 中先 `$env:QA_OUT='qa-out'`）。脚本使用仓库内的 `file://` 网页，无硬编码项目路径；覆盖手机 15 车、桌面 8 车、手机 120 车前 8 秒、12 车慢车超时、终点镜头、成绩列表和重开。超过 120 车仅验证了起跑模拟，未声称浏览器全程性能保证。
 
 ## 历史验证记录（修复前版本；当前行为以本次回归为准）
 
