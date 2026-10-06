@@ -1,8 +1,13 @@
 (function (global) {
   global.AvatarRace = global.AvatarRace || {};
   global.AvatarRace.roster = [
+  ["🐛", "h.w.x25"],
+  ["jax", "r9_jackson"],
+  ["Alan Chan", "alan0928chan"],
+  ["tik", "tik.wong_1008"],
+  ["𝓴𝓪𝓷𝓪𝓸 𝓽𝓼𝓾𝔂𝓾𝓻𝓲", "kcl._0825_"],
+  ["verstappen glazer", "mlk96400"],
   ["❧✮", "kar_man10.3"],
-  ["stukuix", "stukuix"],
   ["Hazel Siu", "hazelsiu0726"],
   ["lklklkyyy", "lklklkyyy"],
   ["Mandmb Leung", "mandmbleung"],
@@ -96,10 +101,11 @@
   ["Blaze Racing", "blazeracing_hk"],
   ["Yroyii", "tong_yang0301"],
   ["Milo🐟_ミロ🐟_🐟", "terumi000517"],
-  ["Dopeee🐧🐧", "cheung_hillary"],
+  ["._heyman_.", "cheung_hillary"],
   ["Sarah", "lyxsarah0728"],
   ["Samuellam", "samuellam0_0"],
   ["ᕦ(ò_óˇ)ᕤ", "kylecthang"],
+  ["Eŉ_ǐQinna_öçĥ", "izeqina_0614"],
   ["ab.bii", "twc.model"],
   ["≼꒰´•͈ ˕ •͈ ྀི꒱≽~.", "moon._.yiu.u"],
   ["joel", "joel._.1655"],
