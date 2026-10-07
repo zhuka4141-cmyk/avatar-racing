@@ -1,8 +1,11 @@
 (function (global) {
   global.AvatarRace = global.AvatarRace || {};
   global.AvatarRace.roster = [
+  ["benben", "benben_11122"],
+  ["Anson Kong", "ansonnnkck"],
+  ["Owen Kehoe", "kehoeowen819"],
+  ["lion", "lion_ge21"],
   ["🐛", "h.w.x25"],
-  ["jax", "r9_jackson"],
   ["Alan Chan", "alan0928chan"],
   ["tik", "tik.wong_1008"],
   ["𝓴𝓪𝓷𝓪𝓸 𝓽𝓼𝓾𝔂𝓾𝓻𝓲", "kcl._0825_"],
@@ -88,7 +91,7 @@
   ["LSTC.****", "lstc.____"],
   ["Leith turbo", "leith.turbo"],
   ["Sally", "sally.xjx"],
-  ["Perseid🌠", "cilsonlee"],
+  ["Perseid🌠", "leecilson"],
   ["～Jayden120919～", "jayden120919"],
   ["✰", "j0yce__98"],
   ["Ho Tommy", "tommyh_ho"],
