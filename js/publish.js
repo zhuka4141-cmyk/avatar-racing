@@ -176,6 +176,9 @@
   }
 
   function publish(token, rows, onProgress) {
+    rows = rows.map(function (row) {
+      return { name: row.name, username: row.username, avatarUrl: row.avatarUrl };
+    });
     var report = onProgress || function () {};
     var baseSha = '', baseTree = '';
     var existing = {};
@@ -260,6 +263,7 @@
         });
       });
     }).then(function (sha) {
+      AvatarRace.roster = rows.map(function (row) { return [row.name, row.username]; });
       report({
         phase: '完成',
         sha: sha,
