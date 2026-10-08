@@ -1,10 +1,22 @@
 (function (global) {
   global.AvatarRace = global.AvatarRace || {};
   global.AvatarRace.roster = [
+  ["Hikaru Nakajo", "hikky_523racing"],
+  ["David", "emental13"],
+  ["_wing._daily", "_wing._daily"],
+  ["Hayden", "1124_hayden"],
+  ["Carloss🌊", "carloss_6787"],
+  ["캐노미canomi TV", "canomi_tv"],
+  ["JELLOGIL", "gil_berth11"],
+  ["E", "_waddledeen"],
+  ["𝓂𝒶𝑔𝑔𝒾𝑒", "maggie_.96"],
+  ["伍晧維", "w.haowei.10"],
+  ["Chowww", "choww0w"],
+  ["Min Jing  Chong", "minjingchong"],
+  ["⛄️", "hei_.0522"],
   ["benben", "benben_11122"],
   ["Anson Kong", "ansonnnkck"],
   ["Owen Kehoe", "kehoeowen819"],
-  ["lion", "lion_ge21"],
   ["🐛", "h.w.x25"],
   ["Alan Chan", "alan0928chan"],
   ["tik", "tik.wong_1008"],
