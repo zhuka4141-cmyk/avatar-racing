@@ -139,9 +139,13 @@
     if (rows.length < 2) return { ok: false, error: '这个 CSV 里没有数据行', added: 0, participants: [] };
     var header = rows[0].map(function (value) { return String(value).trim().toLowerCase(); });
     var nameIndex = header.indexOf('fullname');
+    if (nameIndex < 0) nameIndex = header.indexOf('full name');
+    if (nameIndex < 0) nameIndex = header.indexOf('name');
     var userIndex = header.indexOf('username');
-    var avatarIndex = header.indexOf('avatar url');
-    if (avatarIndex < 0) avatarIndex = header.indexOf('avatar');
+    var avatarIndex = -1;
+    for (var ai = 0; ai < header.length; ai++) {
+      if (/^(avatar(\s*(url|pic|image|link))?|头像)$/.test(header[ai])) { avatarIndex = ai; break; }
+    }
     if (nameIndex < 0 && userIndex < 0) return { ok: false, error: '表头里找不到 Fullname / Username 列', added: 0, participants: [] };
     if (avatarIndex < 0) return { ok: false, error: '表头里找不到 Avatar URL 列', added: 0, participants: [] };
     clear(store);
@@ -247,12 +251,22 @@
     next();
   }
 
+  function proxyUrl(url) {
+    var bare = String(url == null ? '' : url).replace(/^https?:\/\//i, '');
+    if (!bare) return '';
+    return 'https://images.weserv.nl/?url=' + encodeURIComponent(bare) + '&w=192&h=192&fit=cover&output=jpg';
+  }
+
   function avatarSources(participant) {
     var sources = [];
     var username = String(participant && participant.username || '').trim();
     var remote = String(participant && participant.avatarUrl || '').trim();
     if (/^[A-Za-z0-9._-]{1,40}$/.test(username)) sources.push('avatars/' + username + '.jpg');
-    if (/^https?:\/\//i.test(remote)) sources.push(remote);
+    if (/^https?:\/\//i.test(remote)) {
+      sources.push(remote);
+      var proxied = proxyUrl(remote);
+      if (proxied) sources.push(proxied);
+    }
     return sources;
   }
 

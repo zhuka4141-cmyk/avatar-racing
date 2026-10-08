@@ -222,7 +222,10 @@
       if (!result.ok) { toast(result.error); return; }
       renderList();
       var pending = loadAvatars(result.participants, function (summary) {
-        toast('已导入 ' + result.added + ' 位参赛者：头像成功 ' + (summary.pending - summary.failed) + ' 张' + (summary.failed ? '，失败 ' + summary.failed + ' 张（用默认头像）' : ''));
+        toast('已导入 ' + result.added + ' 位参赛者：头像成功 ' + (summary.pending - summary.failed) + ' 张' + (summary.failed ? '，失败 ' + summary.failed + ' 张（用默认头像：' + summary.firstError + '）' : ''));
+        if (elements.diag) elements.diag.textContent = summary.failed
+          ? ('头像失败 ' + summary.failed + ' / ' + summary.pending + '：' + summary.firstError)
+          : ('头像 ' + summary.pending + ' 张全部就绪');
       });
       toast(pending ? ('已导入 ' + result.added + ' 位参赛者，正在加载 ' + pending + ' 张头像…') : ('已导入 ' + result.added + ' 位参赛者'));
     }
