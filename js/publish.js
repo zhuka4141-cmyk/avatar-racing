@@ -5,8 +5,11 @@
   var REPO = 'avatar-racing';
   var BRANCH = 'main';
   var TOKEN_KEY = 'avatarRace.token';
+  var URLS_KEY = 'avatarRace.avatarUrls';
   var ROSTER_PATH = 'data/roster.js';
   var USER_RE = /^[A-Za-z0-9._-]{1,40}$/;
+  var FETCH_WORKERS = 10;
+  var UPLOAD_WORKERS = 10;
 
   function esc(value) {
     var text = String(value == null ? '' : value).replace(/[\r\n]+/g, ' ');
@@ -77,8 +80,7 @@
     return list;
   }
 
-  function bytesToBase64(buffer) {
-    var bytes = new Uint8Array(buffer);
+  function bytesToBase64(bytes) {
     var chunk = 0x8000;
     var parts = [];
     for (var i = 0; i < bytes.length; i += chunk) {
@@ -88,7 +90,20 @@
   }
 
   function base64Utf8(text) {
-    return btoa(unescape(encodeURIComponent(text)));
+    return bytesToBase64(new TextEncoder().encode(text));
+  }
+
+  function gitBlobSha(bytes) {
+    var header = new TextEncoder().encode('blob ' + bytes.byteLength + '\u0000');
+    var all = new Uint8Array(header.length + bytes.byteLength);
+    all.set(header, 0);
+    all.set(bytes, header.length);
+    return crypto.subtle.digest('SHA-1', all).then(function (hash) {
+      var view = new Uint8Array(hash);
+      var hex = '';
+      for (var i = 0; i < view.length; i++) hex += ('0' + view[i].toString(16)).slice(-2);
+      return hex;
+    });
   }
 
   function fetchAvatar(row) {
@@ -103,7 +118,8 @@
         return response.arrayBuffer().then(function (buffer) {
           if (buffer.byteLength < 400) throw new Error('too small');
           if (type && type.indexOf('image/') !== 0 && type.indexOf('application/octet') !== 0) throw new Error('not image: ' + type);
-          return { path: 'avatars/' + row.username + '.jpg', base64: bytesToBase64(buffer), source: url };
+          var bytes = new Uint8Array(buffer);
+          return { path: 'avatars/' + row.username + '.jpg', bytes: bytes, base64: bytesToBase64(bytes), source: url };
         });
       }).catch(function () { return next(); });
     }
@@ -111,18 +127,22 @@
   }
 
   function pool(items, limit, worker) {
-    var index = 0, done = 0;
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
+      if (!items.length) { resolve(); return; }
+      var index = 0, done = 0, failed = false;
+      function finish() {
+        done++;
+        if (done === items.length) resolve(); else run();
+      }
       function run() {
-        if (index >= items.length) { if (done === items.length) resolve(); return; }
+        if (failed) return;
+        if (index >= items.length) return;
         var item = items[index++];
-        Promise.resolve(worker(item)).then(function () {
-          done++;
-          if (done === items.length) resolve(); else run();
+        Promise.resolve().then(function () { return worker(item); }).then(finish, function (error) {
+          if (!failed) { failed = true; reject(error); }
         });
       }
       for (var i = 0; i < Math.min(limit, items.length); i++) run();
-      if (!items.length) resolve();
     });
   }
 
@@ -147,30 +167,109 @@
     });
   }
 
-  function commitFiles(token, files, message, onProgress) {
-    var baseSha, baseTree;
+  function loadUrlCache() {
+    try { return JSON.parse(global.localStorage.getItem(URLS_KEY) || '{}') || {}; } catch (error) { return {}; }
+  }
+
+  function saveUrlCache(cache) {
+    try { global.localStorage.setItem(URLS_KEY, JSON.stringify(cache)); } catch (error) { /* 忽略 */ }
+  }
+
+  function publish(token, rows, onProgress) {
+    var report = onProgress || function () {};
+    var baseSha = '', baseTree = '';
+    var existing = {};
+    var files = [];
+    var skipped = 0;
+    var missing = [];
+    var urlCache = loadUrlCache();
+    var rosterBase64 = base64Utf8(rosterText(rows));
+    var newCache = {};
+    var started = Date.now();
+
+    function elapsed() { return ((Date.now() - started) / 1000).toFixed(1) + 's'; }
+
     return api(token, '/git/ref/heads/' + BRANCH).then(function (ref) {
       baseSha = ref.object.sha;
       return api(token, '/git/commits/' + baseSha);
     }).then(function (commit) {
       baseTree = commit.tree.sha;
-      var tree = [];
-      var chain = Promise.resolve();
-      files.forEach(function (file, i) {
-        chain = chain.then(function () {
+      report({ phase: '树', text: '读取仓库文件列表…' });
+      return api(token, '/git/trees/' + baseTree + '?recursive=1');
+    }).then(function (tree) {
+      (tree.tree || []).forEach(function (entry) { if (entry.type === 'blob') existing[entry.path] = entry.sha; });
+      var total = rows.length;
+      var fetched = 0;
+      report({ phase: '取头像', text: '取头像 0 / ' + total });
+      return pool(rows, FETCH_WORKERS, function (row) {
+        var path = 'avatars/' + row.username + '.jpg';
+        var known = existing[path];
+        if (known && urlCache[row.username] && urlCache[row.username] === row.avatarUrl) {
+          fetched++;
+          skipped++;
+          newCache[row.username] = row.avatarUrl;
+          if (fetched % 10 === 0 || fetched === total) report({ phase: '取头像', text: '取头像 ' + fetched + ' / ' + total + '（跳过未变化 ' + skipped + '）' });
+          return Promise.resolve();
+        }
+        return fetchAvatar(row).then(function (file) {
+          fetched++;
+          if (!file) {
+            missing.push(row.username);
+            if (known) newCache[row.username] = urlCache[row.username] || '';
+          } else {
+            newCache[row.username] = row.avatarUrl;
+            return gitBlobSha(file.bytes).then(function (sha) {
+              if (known && known === sha) skipped++;
+              else files.push(file);
+            });
+          }
+        }).then(function () {
+          if (fetched % 10 === 0 || fetched === total) report({ phase: '取头像', text: '取头像 ' + fetched + ' / ' + total + '（跳过未变化 ' + skipped + '）' });
+        });
+      });
+    }).then(function () {
+      var rosterSha = existing[ROSTER_PATH];
+      return gitBlobSha(new TextEncoder().encode(rosterText(rows))).then(function (sha) {
+        var rosterChanged = rosterSha !== sha;
+        if (rosterChanged) files.push({ path: ROSTER_PATH, base64: rosterBase64 });
+        if (!files.length) {
+          report({ phase: '完成', text: '没有变化（名单与头像都是最新的），' + elapsed() });
+          saveUrlCache(Object.assign({}, urlCache, newCache));
+          return '';
+        }
+        var total = files.length;
+        var done = 0;
+        report({ phase: '上传', text: '上传 0 / ' + total + '（跳过未变化 ' + skipped + '）' });
+        return pool(files, UPLOAD_WORKERS, function (file) {
           return api(token, '/git/blobs', { method: 'POST', body: { content: file.base64, encoding: 'base64' } }).then(function (blob) {
-            tree.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
-            if (onProgress) onProgress(i + 1, files.length);
+            file.sha = blob.sha;
+            done++;
+            if (done % 5 === 0 || done === total) report({ phase: '上传', text: '上传 ' + done + ' / ' + total });
+          });
+        }).then(function () {
+          var tree = files.map(function (file) { return { path: file.path, mode: '100644', type: 'blob', sha: file.sha }; });
+          report({ phase: '提交', text: '提交中…' });
+          return api(token, '/git/trees', { method: 'POST', body: { base_tree: baseTree, tree: tree } });
+        }).then(function (created) {
+          return api(token, '/git/commits', { method: 'POST', body: { message: 'sync followers from web: ' + rows.length + ' 位', tree: created.sha, parents: [baseSha] } });
+        }).then(function (commit) {
+          return api(token, '/git/refs/heads/' + BRANCH, { method: 'PATCH', body: { sha: commit.sha } }).then(function () {
+            saveUrlCache(Object.assign({}, urlCache, newCache));
+            return commit.sha;
           });
         });
       });
-      return chain.then(function () { return tree; });
-    }).then(function (tree) {
-      return api(token, '/git/trees', { method: 'POST', body: { base_tree: baseTree, tree: tree } });
-    }).then(function (created) {
-      return api(token, '/git/commits', { method: 'POST', body: { message: message, tree: created.sha, parents: [baseSha] } });
-    }).then(function (commit) {
-      return api(token, '/git/refs/heads/' + BRANCH, { method: 'PATCH', body: { sha: commit.sha } }).then(function () { return commit.sha; });
+    }).then(function (sha) {
+      report({
+        phase: '完成',
+        sha: sha,
+        skipped: skipped,
+        missing: missing,
+        count: rows.length,
+        text: (sha ? '已提交 ' + sha.slice(0, 7) : '已是最新') + '：名单 ' + rows.length + ' 位、本次更新 ' + (rows.length - missing.length - skipped) + ' 张、跳过未变化 ' + skipped + ' 张'
+          + (missing.length ? '、取不到 ' + missing.length + ' 张（保留原图）' : '') + '，用时 ' + elapsed()
+      });
+      return sha;
     });
   }
 
@@ -180,16 +279,17 @@
     sourcesFor: sourcesFor,
     proxyUrl: proxyUrl,
     fetchAvatar: fetchAvatar,
-    commitFiles: commitFiles,
+    gitBlobSha: gitBlobSha,
+    publish: publish,
     owner: OWNER,
     repo: REPO,
     branch: BRANCH,
     tokenKey: TOKEN_KEY,
+    urlsKey: URLS_KEY,
     rosterPath: ROSTER_PATH
   };
 
   if (typeof document === 'undefined') return;
-  global.AvatarRacePublishInstall = function () { install(); };
 
   function install() {
     if (document.getElementById('publishBtn')) return;
@@ -234,26 +334,8 @@
       }
       busy = true;
       button.disabled = true;
-      var fetched = 0, missing = [];
-      say('正在取头像 0 / ' + rows.length + ' …');
-      pool(rows, 6, function (item) {
-        return fetchAvatar(item).then(function (result) {
-          fetched++;
-          if (!result) missing.push(item.username);
-          item._file = result;
-          if (fetched % 10 === 0 || fetched === rows.length) say('正在取头像 ' + fetched + ' / ' + rows.length + ' …');
-        });
-      }).then(function () {
-        var files = [{ path: ROSTER_PATH, base64: base64Utf8(rosterText(rows)) }];
-        rows.forEach(function (item) { if (item._file) files.push(item._file); });
-        say('正在提交 ' + files.length + ' 个文件 …');
-        return commitFiles(token, files, 'sync followers from web: ' + rows.length + ' 位', function (done, total) {
-          if (done % 20 === 0 || done === total) say('正在上传 ' + done + ' / ' + total + ' …');
-        });
-      }).then(function (sha) {
-        say('已提交 ' + sha.slice(0, 7) + '：名单 ' + rows.length + ' 位、头像 ' + (rows.length - missing.length) + ' 张'
-          + (missing.length ? '，' + missing.length + ' 张取不到（保留原图）' : '') + '。GitHub Pages 约 1 分钟后更新');
-      }).catch(function (error) {
+      say('开始同步…');
+      publish(token, rows, function (progress) { say(progress.text); }).catch(function (error) {
         var message = String(error && error.message || error);
         if (error && (error.status === 401 || error.status === 403)) {
           try { global.localStorage.removeItem(TOKEN_KEY); } catch (ignore) { /* 忽略 */ }
@@ -266,7 +348,6 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', install);
-  } else install();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
 })(window);
