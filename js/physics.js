@@ -80,7 +80,12 @@
     if (c.gone) return;
     if (!race || typeof race.rng !== 'function') throw new TypeError('updateCar requires race.rng');
     var targetV = 0, rnd = race.rng;
-    if (c.finished) targetV = c.baseSpeed * 0.55;
+    if (c.finished) {
+      // Clear the finish before slowing down, so the arriving pack has room.
+      var exitSpeed = c.exitSpeed || Math.max(c.v, c.baseSpeed);
+      var slowdown = math.clamp((c.s - raceLen - 600) / 600, 0, 1);
+      targetV = math.lerp(exitSpeed, c.baseSpeed * 0.55, slowdown);
+    }
     else if (t >= c.startDelay) {
       var pace = 1 + 0.12 * Math.sin(t * 0.37 + c.paceSeed) + 0.07 * Math.sin(t * 0.93 + c.paceSeed2) + 0.05 * Math.sin(t * 0.21 + c.paceSeed3);
       if (c.rigged && config.RIG.paceDamp > 0) pace = 1 + (pace - 1) * (1 - config.RIG.paceDamp * math.clamp(c.s / raceLen, 0, 1));
@@ -108,7 +113,7 @@
     }
     if (targetV > 0) c.v += (targetV - c.v) * (1 - Math.exp(-c.accel * dt)); else c.v = 0;
     c.s += c.v * dt;
-    if (!c.finished && c.s >= raceLen) { c.finished = true; var travelled = c.v * dt, frac = travelled > 1e-6 ? math.clamp((c.s - raceLen) / travelled, 0, 1) : 0; c.finishTime = t - dt * frac; }
+    if (!c.finished && c.s >= raceLen) { c.finished = true; c.exitSpeed = Math.max(c.v, c.baseSpeed); var travelled = c.v * dt, frac = travelled > 1e-6 ? math.clamp((c.s - raceLen) / travelled, 0, 1) : 0; c.finishTime = t - dt * frac; }
     if (c.s > raceLen + 2800) c.gone = true;
     if (t >= c.passUntil) c.lane = math.damp(c.lane, c.baseLane, 0.18, dt);
     var wob = 7 * Math.sin(t * 0.62 + c.wobbleSeed * 2.1), target = math.clamp(c.lane + wob, -config.LANE_MAX, config.LANE_MAX);
@@ -125,12 +130,14 @@
   }
 
   function separateOverlap(cars, dt, instant) {
-    var idx = []; for (var q = 0; q < cars.length; q++) if (!cars[q].broken && !cars[q].gone) idx.push(cars[q]);
+    var idx = []; for (var q = 0; q < cars.length; q++) if (!cars[q].broken && !cars[q].gone && !cars[q].finished) idx.push(cars[q]);
     idx.sort(function (x, y) { return x.s - y.s; }); var fixed = 0;
     for (var i = 0; i < idx.length; i++) for (var j = i + 1; j < idx.length; j++) {
       var a = idx[i], b = idx[j], ads = b.s - a.s; if (ads >= config.CAR_LEN) break;
+      var dl = a.lateral - b.lateral, adl = Math.abs(dl);
+      if (adl >= config.CAR_W + 3) continue;
       var need = config.CAR_W * (1 - config.MAX_OVERLAP * config.CAR_LEN / (config.CAR_LEN - ads)) + 3;
-      var dl = a.lateral - b.lateral, adl = Math.abs(dl); if (adl >= need) continue;
+      if (adl >= need) continue;
       var dir = dl >= 0 ? 1 : -1; if (adl < 0.01) dir = (i % 2 === 0) ? 1 : -1;
       if (instant) { var half = (need - adl) / 2; a.lateral = math.clamp(a.lateral + dir * half, -config.LANE_MAX, config.LANE_MAX); b.lateral = math.clamp(b.lateral - dir * half, -config.LANE_MAX, config.LANE_MAX); }
       else { var move = Math.min(need - adl, config.CAR_W) * math.clamp(dt * 7, 0, 1); a.lateral = math.clamp(a.lateral + dir * move, -config.LANE_MAX, config.LANE_MAX); b.lateral = math.clamp(b.lateral - dir * move, -config.LANE_MAX, config.LANE_MAX); if (b.v >= a.v * 0.98) { b.passTimer = 0.9; b.passPower = 0.20; } }
@@ -148,7 +155,7 @@
       var hi = Math.max(c.lateral, lane) + config.CAR_W / 2;
       for (var k = 0; k < cars.length; k++) {
         var o = cars[k];
-        if (o === c || o.broken || o.gone || Math.abs(o.s - c.s) > 50) continue;
+        if (o === c || o.broken || o.gone || o.finished || Math.abs(o.s - c.s) > 50) continue;
         if (Math.abs(o.lateral - lane) < config.CAR_W) return false;
         if (o.passUntil > race.elapsed && Math.abs(o.lane - lane) < config.CAR_W) return false;
         if (o.lateral > lo && o.lateral < hi) return false;
@@ -164,7 +171,7 @@
       var front = null, nearest = 220;
       for (var j = 0; j < cars.length; j++) {
         var other = cars[j], gap = other.s - c.s;
-        if (other === c || other.broken || other.gone) continue;
+        if (other === c || other.broken || other.gone || other.finished) continue;
         if (gap > 20 && gap < nearest && Math.abs(other.lateral - c.lateral) < 48) { front = other; nearest = gap; }
       }
       if (front && !(c.v < front.v - 15 && nearest > 120)) {
@@ -175,7 +182,7 @@
           var room = 250;
           for (var k2 = 0; k2 < cars.length; k2++) {
             var o2 = cars[k2], ds2 = o2.s - c.s;
-            if (o2 === c || o2.broken || o2.gone || ds2 < -100 || ds2 > 220) continue;
+            if (o2 === c || o2.broken || o2.gone || o2.finished || ds2 < -100 || ds2 > 220) continue;
             if (Math.abs(o2.lateral - lane) < 52 || (o2.passUntil > race.elapsed && Math.abs(o2.lane - lane) < 52)) room = Math.min(room, Math.abs(ds2));
           }
           if (room > 105 && room > bestRoom) { best = lane; bestRoom = room; }
@@ -212,7 +219,7 @@
         }
       }
     }
-    var sorted = cars.filter(function (c) { return !c.broken && !c.gone; }).sort(function (a, b) { return a.s - b.s; });
+    var sorted = cars.filter(function (c) { return !c.broken && !c.gone && !c.finished; }).sort(function (a, b) { return a.s - b.s; });
     for (var si = 0; si < sorted.length; si++) {
       var a = sorted[si];
       for (var sj = si + 1; sj < sorted.length; sj++) {
@@ -228,13 +235,24 @@
   }
 
   function endRace(race) { race.ranked = rankCars(race.cars); race.results = race.ranked.map(function (c) { return { id: c.p && c.p.id, name: c.p && (c.p.name || c.p.id) || '', avatar: c.p && (c.p.avatarDataUrl || c.p.avatarDiscUrl || ''), finished: c.finished, finishTime: c.finishTime, progress: c.progress, stoppedAt: race.elapsed }; }); race.phase = 'ending'; race.endingElapsed = 0; }
+  function waitingLimit(race) {
+    // Long starting grids need additional travel time for their rear rows.
+    var speed = race.track.raceLen / 21.5;
+    return Math.max(6, trackApi.gridPlan(race.cars.length).depth / (speed * 0.85));
+  }
   function step(race, dt) {
-    race.elapsed += dt; interact(race, dt); var lead0 = race.ranked && race.ranked[0]; race.leaderS = lead0 ? lead0.s : 0;
+    race.elapsed += dt;
+    // Once the result order is fixed, cars only need to coast out of view.
+    if (race.phase === 'ending' || race.phase === 'results') {
+      for (var endingIndex = 0; endingIndex < race.cars.length; endingIndex++) updateCar(race, race.cars[endingIndex], dt, race.elapsed, race.track.raceLen);
+      return;
+    }
+    interact(race, dt); var lead0 = race.ranked && race.ranked[0]; race.leaderS = lead0 ? lead0.s : 0;
     for (var i = 0; i < race.cars.length; i++) updateCar(race, race.cars[i], dt, race.elapsed, race.track.raceLen);
     for (var rp = 0; rp < 2; rp++) if (!separateOverlap(race.cars, dt, true)) break;
     race.ranked = rankCars(race.cars); for (var r = 0; r < race.ranked.length; r++) race.ranked[r].rank = r + 1; computeRival(race);
     if (race.phase === 'racing') { if (race.ranked[0] && race.ranked[0].finished) { race.phase = 'waiting'; race.waitingElapsed = 0; race.leaderFinishAt = race.ranked[0].finishTime; } }
-    else if (race.phase === 'waiting') { race.waitingElapsed += dt; var fin = 0, alive = 0; for (var k = 0; k < race.cars.length; k++) { if (race.cars[k].broken) continue; alive++; if (race.cars[k].finished) fin++; } if (fin >= alive || race.waitingElapsed >= 6) endRace(race); }
+    else if (race.phase === 'waiting') { race.waitingElapsed += dt; var fin = 0, alive = 0; for (var k = 0; k < race.cars.length; k++) { if (race.cars[k].broken) continue; alive++; if (race.cars[k].finished) fin++; } if (fin >= alive || race.waitingElapsed >= waitingLimit(race)) endRace(race); }
   }
   function snapshotResults(race) {
     var source = race.results && race.results.length ? race.results : rankCars(race.cars || []);
@@ -252,5 +270,5 @@
     });
   }
 
-  AvatarRace.physics = { createRaceState: createRaceState, createCars: createCars, rankCars: rankCars, step: step, snapshotResults: snapshotResults, computeRival: computeRival, updateCar: updateCar, interact: interact, separateOverlap: separateOverlap };
+  AvatarRace.physics = { createRaceState: createRaceState, createCars: createCars, rankCars: rankCars, step: step, snapshotResults: snapshotResults, waitingLimit: waitingLimit, computeRival: computeRival, updateCar: updateCar, interact: interact, separateOverlap: separateOverlap };
 })(typeof window !== 'undefined' ? window : globalThis);
