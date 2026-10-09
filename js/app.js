@@ -20,8 +20,6 @@ var countdownEl = document.getElementById('countdown');
 var countdownText = document.getElementById('countdownText');
 var startLights = [document.getElementById('startLight1'), document.getElementById('startLight2'), document.getElementById('startLight3')];
 var litCount = -1, countdownStartedAt = 0, startAudio = null, startTones = [];
-var liveRanking = document.getElementById('liveRanking');
-var rankNodes = new Map();
 var resultEl = document.getElementById('result');
 var resultNote = document.getElementById('resultNote');
 var boardEl = document.getElementById('board');
@@ -75,35 +73,7 @@ var renderer = AvatarRace.render.create(canvas, {
   raceView: raceView, hudStatus: hudStatus, hudSub: hudSub, rankBtn: rankBtnEl,
   displayName: displayName
 });
-function updateHud(dt) { renderer.updateHud({ race: race }, dt); updateLiveRanking(dt); }
-function resetLiveRanking(){
-  liveRanking.innerHTML = ''; rankNodes.clear(); liveRanking.hidden = true;
-}
-function updateLiveRanking(dt){
-  if (race.phase === 'setup' || race.phase === 'countdown' || race.phase === 'results') { liveRanking.hidden = true; return; }
-  liveRanking.hidden = false;
-  var leaders = race.ranked.slice(0, 15), active = new Set();
-  for (var i = 0; i < leaders.length; i++) {
-    var participant = leaders[i].p, entry = rankNodes.get(participant.id); active.add(participant.id);
-    if (!entry) {
-      var node = document.createElement('div'), number = document.createElement('span'), image = document.createElement('img');
-      node.className = 'live-rank'; node.setAttribute('role', 'listitem'); node.setAttribute('data-id', String(participant.id)); image.alt = ''; image.referrerPolicy = 'no-referrer';
-      node.appendChild(number); node.appendChild(image); liveRanking.appendChild(node);
-      entry = { node: node, number: number, image: image, source: null }; rankNodes.set(participant.id, entry);
-    }
-    var source = participant.avatarDisc || participant.avatarDataUrl || participant.avatarDiscUrl;
-    if (entry.source !== source) {
-      entry.source = source;
-      try { entry.image.src = participant.avatarDisc ? participant.avatarDisc.toDataURL() : (participant.avatarDataUrl || participant.avatarDiscUrl || ''); } catch (error) { entry.image.src = participant.avatarDataUrl || participant.avatarDiscUrl || ''; }
-    }
-    if (entry.rank !== i + 1) {
-      entry.rank = i + 1; entry.number.textContent = String(i + 1); entry.node.setAttribute('aria-label', 'Position ' + (i + 1));
-      entry.node.style.setProperty('--rank-index', String(i));
-      entry.node.style.zIndex = String(15 - i);
-    }
-  }
-  rankNodes.forEach(function(entry, id){ if (!active.has(id)) { liveRanking.removeChild(entry.node); rankNodes.delete(id); } });
-}
+function updateHud(dt) { renderer.updateHud({ race: race }, dt); }
 function render(dt) { renderer.render({ race: race }, dt); }
 function resize() { renderer.resize(); }
 function showResults() {
@@ -162,7 +132,6 @@ function startRace(){
     return;
   }
   applyDefaultNames();
-  resetLiveRanking();
   race.seed = (Math.random()*4294967295) >>> 0;
   race.track = AvatarRace.track.buildTrack(race.seed, AvatarRace.track.gridPlan(participants.length).depth);
   race.elapsed = 0; race.waitingElapsed = 0; race.endingElapsed = 0; race.leaderFinishAt = 0;
@@ -193,7 +162,6 @@ function startRace(){
   updateHud(0.11);
 }
 function backToSetup(){
-  resetLiveRanking();
   stopStartSounds(); setStartLights(0); countdownEl.hidden = true;
   race.phase = 'setup';
   race.cars = [];
