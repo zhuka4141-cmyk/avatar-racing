@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>头像赛车</title>
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v20261009d" />
 </head>
 <body>
 
@@ -38,13 +38,16 @@
 <section id="raceView" class="race" hidden>
   <canvas id="game"></canvas>
   <div class="hud">
-    <div class="hud-panel">
+    <div class="hud-left"><div class="hud-panel">
       <div id="hudStatus" class="hud-status">Ready</div>
       <div id="hudSub" class="hud-sub"></div>
-    </div>
+    </div><div id="liveRanking" class="live-ranking" role="list" aria-label="Top 15" hidden></div></div>
     <button id="rankBtn" class="hud-btn" type="button" hidden>Standings</button>
   </div>
-  <div id="countdown" class="countdown" hidden><i id="countdownText">3</i></div>
+  <div id="countdown" class="countdown" hidden data-lit="0">
+    <div class="start-lights" aria-hidden="true"><span id="startLight1" class="start-light"></span><span id="startLight2" class="start-light"></span><span id="startLight3" class="start-light"></span></div>
+    <span id="countdownText" class="sr-only" role="status" aria-live="polite">Ready</span>
+  </div>
   <div id="result" class="result" hidden>
     <div class="result-card">
       <h2>Race finished</h2>
@@ -71,7 +74,7 @@
 <script src="js/results.js?v20261006b"></script>
 <script src="js/debug.js?v20261006b"></script>
 <script src="js/setup-ui.js?v20261006b"></script>
-<script src="js/app.js?v20261006b"></script>
+<script src="js/app.js?v20261009d"></script>
 <script src="js/publish.js?v20261008a"></script>
 </body>
 </html>
