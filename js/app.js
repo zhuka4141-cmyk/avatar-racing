@@ -98,7 +98,7 @@ function updateLiveRanking(dt){
     }
     if (entry.rank !== i + 1) {
       entry.rank = i + 1; entry.number.textContent = String(i + 1); entry.node.setAttribute('aria-label', 'Position ' + (i + 1));
-      entry.node.style.transform = 'translate(' + (i % 3 * 60) + 'px,' + (Math.floor(i / 3) * 34) + 'px)';
+      entry.node.style.setProperty('--rank-index', String(i));
       entry.node.style.zIndex = String(15 - i);
     }
   }
