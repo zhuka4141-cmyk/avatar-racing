@@ -1,12 +1,6 @@
 (function (global) {
   global.AvatarRace = global.AvatarRace || {};
   global.AvatarRace.roster = [
-  ["Gustavo Xavier Carciofi", "guto.bikes"],
-  ["Owen", "owen75514"],
-  ["Rico Chan", "_cct0729"],
-  ["Jayden_fwx", "jaydenfoong__________"],
-  ["F29FTLG", "fakhri_hilal"],
-  ["Franek Jurczak", "kurczak_.487"],
   ["hayden_w0ng", "hayden_w0ng"],
   ["dou 💗", "dou_.remifaso"],
   ["Must.Be.The.Water", "must_be_the.water"],
@@ -43,6 +37,7 @@
   ["Chowww", "choww0w"],
   ["Min Jing  Chong", "minjingchong"],
   ["⛄️", "hei_.0522"],
+  ["benben", "benben_11122"],
   ["Anson Kong", "ansonnnkck"],
   ["Owen Kehoe", "kehoeowen819"],
   ["🐛", "h.w.x25"],
@@ -83,6 +78,7 @@
   ["Austin Barnard", "austinab44"],
   ["Adam Dolníček", "dolnicek.adam"],
   ["Helouš🥹", "helena.germekova"],
+  ["dyud_1031", "dyud.1031"],
   ["tanjiro", "tanjiro73829"],
   ["Jayven", "jayven88racer"],
   ["Siu Nam", "icesiu0211"],
@@ -186,7 +182,7 @@
   ["𝓜𝓔𝓜", "mem_9294_"],
   ["Coco 🎀", "tclee_31"],
   ["Tayo_C", "tayo_cmh"],
-  ["Kiu", "nyk._sophia"],
+  ["🍉", "nyk._sophia"],
   ["🩰🥜", "_.rillenee._"],
   ["Tiff._.any", "tiffany_ho1018"],
   ["闻汐未归", "ching_liuuu"],
