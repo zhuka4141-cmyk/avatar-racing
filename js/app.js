@@ -219,7 +219,6 @@ function start(){
       rosterButton: document.getElementById('rosterBtn'),
       csvButton: document.getElementById('csvBtn'),
       csvInput: document.getElementById('csvInput'),
-      sampleButton: document.getElementById('sampleBtn'),
       clearButton: document.getElementById('clearBtn'),
       shuffleButton: document.getElementById('shuffleBtn'),
       startButton: document.getElementById('startBtn')

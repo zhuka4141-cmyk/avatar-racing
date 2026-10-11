@@ -27,9 +27,9 @@ function failuresNow(page){ return page.evaluate(function(){ var t=document.getE
   await page.waitForTimeout(200);
   P('GUARD_1P', await failuresNow(page));
   assert.equal((await state(page)).phase, 'setup', 'one participant must not start a race');
-  await page.click('#sampleBtn');
+  for (let i = 0; i < 6; i++) await page.click('#addBtn');
   await page.waitForTimeout(200);
-  P('CARDS_AFTER_SAMPLE', await page.evaluate(function(){ return document.querySelectorAll('.card').length; }));
+  P('CARDS_AFTER_ADD', await page.evaluate(function(){ return document.querySelectorAll('.card').length; }));
   assert.equal(await page.locator('.card').count(), 7);
   await page.locator('.card').nth(0).locator('input[type=file]').setInputFiles(path.join(OUT,'avatar.png'));
   await page.waitForTimeout(400);

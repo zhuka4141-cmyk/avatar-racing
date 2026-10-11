@@ -9,7 +9,7 @@ function snap(page,n){ return page.screenshot({ path: outputPath(n + '.png') });
 function state(page){ return page.evaluate(function(){ var api=window.__avatarRace, r=api.getState(), cars=api.getCars(); var fin=0; for(var i=0;i<cars.length;i++) if(cars[i].finished) fin++; return { phase:r.phase, cars:cars.length, fin:fin, t:+r.elapsed.toFixed(2), wait:+r.waitingElapsed.toFixed(2) }; }); }
 async function setup(page, extra){
   await page.goto(URL);
-  await page.click('#sampleBtn');
+  for (let i = 0; i < 6; i++) await page.click('#addBtn');
   await page.evaluate(function(k){ for (var i=0;i<k;i++) document.getElementById('addBtn').click(); }, extra);
   return page.evaluate(function(){ return document.querySelectorAll('.card').length; });
 }

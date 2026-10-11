@@ -13,7 +13,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     page.on('pageerror', function(e){ errors.push(cs.label + ' pageerror: ' + e.message); });
     page.on('console', function(m){ if(m.type()==='error') errors.push(cs.label + ' console: ' + m.text()); });
     await page.goto(URL);
-    await page.click('#sampleBtn');
+    for (let i = 0; i < 6; i++) await page.click('#addBtn');
     if (cs.n) await page.evaluate(function(k){ for (var i=0;i<k;i++) document.getElementById('addBtn').click(); }, cs.n);
     await page.screenshot({ path: outputPath('grid_' + cs.label + '.png') });
     await page.click('#startBtn');

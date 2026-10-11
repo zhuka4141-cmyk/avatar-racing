@@ -87,6 +87,45 @@ test('an overtake settles the random boost instead of flying past', () => {
   const boosted = run(0), settled = run(1.0); assert.ok(settled < boosted - 15, `overtake must fade the boost: ${settled.toFixed(0)} vs ${boosted.toFixed(0)}`);
 });
 
+test('front and middle cars repeatedly surge and recover smoothly on a clear track', () => {
+  const metrics = [];
+  for (const rank of [1, 4, 8]) {
+    const swings = [];
+    for (const seed of [1, 42, 9876, 2026, 31415]) {
+      const ctx = simulation(15, seed), c = ctx.race.cars[rank - 1];
+      Object.assign(c, { s: 0, rank, lastRank: rank, startDelay: 0, boostCooldown: 99 });
+      const windows = Array.from({ length: 4 }, () => []);
+      for (let frame = 1; frame <= 14 * 60; frame++) {
+        const t = frame / 60, previous = c.v;
+        ctx.race.leaderS = c.s; // Isolate each car's own rhythm from catchup and traffic.
+        ctx.AvatarRace.physics.updateCar(ctx.race, c, 1 / 60, t, 1e9);
+        if (t < 2) continue;
+        assert.ok(c.v > c.baseSpeed * 0.45 && c.v < c.baseSpeed * 1.6, 'pace must stay bounded');
+        assert.ok(Math.abs(c.v - previous) < c.baseSpeed * 0.04, 'speed must change smoothly');
+        const window = Math.min(3, Math.floor((t - 2) / 3));
+        windows[window].push(c.v / c.baseSpeed);
+      }
+      swings.push(...windows.map(values => Math.max(...values) - Math.min(...values)));
+    }
+    swings.sort((a, b) => a - b);
+    const median = swings[Math.floor(swings.length / 2)];
+    metrics.push({ rank, medianThreeSecondSwing: +median.toFixed(3) });
+    console.log('PACE_METRICS', JSON.stringify(metrics[metrics.length - 1]));
+    assert.ok(median >= 0.28, `rank ${rank} has too little surge/recovery over three seconds: ${median.toFixed(3)}`);
+  }
+});
+
+test('the current 264-person roster can race to a complete result', () => {
+  const ctx = simulation(264), { race, AvatarRace } = ctx;
+  while (race.phase === 'racing' || race.phase === 'waiting') {
+    AvatarRace.physics.step(race, 1 / 60);
+    assert.ok(race.elapsed < 45, 'large race never finishes');
+    assert.ok(race.cars.every(c => !c.broken && Number.isFinite(c.s) && Number.isFinite(c.v)), 'invalid large-race car');
+  }
+  assert.equal(race.results.length, 264);
+  assert.ok(race.results.every(c => c.finished && c.finishTime > 0), 'all 264 cars must finish');
+});
+
 test('whole races stay finite and settle only after everyone has finished', () => {
   const metrics = [];
   for (const seed of [1, 42, 9876, 2026, 31415]) {

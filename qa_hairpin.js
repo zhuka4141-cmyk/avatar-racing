@@ -29,7 +29,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     }
     return out;
   }));
-  await page.click('#sampleBtn');
+  for (let i = 0; i < 6; i++) await page.click('#addBtn');
   await page.click('#startBtn');
   await page.waitForTimeout(4300);
   var shots = 0, prevShot = -10;

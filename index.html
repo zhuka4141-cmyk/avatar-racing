@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>头像赛车</title>
-<link rel="stylesheet" href="styles.css?v20261009f" />
+<link rel="stylesheet" href="styles.css?v20261011b" />
 </head>
 <body>
 
@@ -12,8 +12,7 @@
   <div class="wrap">
     <div class="head">
       <h1>头像赛车<span id="countBadge" class="count">共 0 位参赛者</span></h1>
-      <p class="sub">填写姓名并上传头像，点击“开始比赛”即可观看全自动头像赛车。至少需要 2 位参赛者；头像只在当前页面会话中使用，不会上传到任何服务器。</p>
-      <p class="ver">构建 v4 · 头像来源：本地 avatars/ → 远程地址 → 默认头像<span id="diag"></span></p>
+      <p class="ver"><span id="diag"></span></p>
     </div>
     <div id="searchBar" class="search" hidden>
       <input id="searchInput" type="search" placeholder="搜索姓名 / IG 用户名" autocomplete="off" spellcheck="false" />
@@ -21,11 +20,10 @@
       <span id="searchCount" class="search-count"></span>
     </div>
     <div id="list" class="list"></div>
-    <div id="empty" class="empty">还没有参赛者，点击下方“添加参赛者”或“填入示例参赛者”开始。</div>
+    <div id="empty" class="empty">还没有参赛者，点击下方“添加参赛者”开始。</div>
   </div>
   <div class="actions">
     <button id="addBtn" class="btn" type="button">添加参赛者</button>
-    <button id="sampleBtn" class="btn ghost" type="button">填入示例参赛者</button>
     <button id="rosterBtn" class="btn ghost" type="button">载入粉丝名单</button>
     <button id="csvBtn" class="btn ghost" type="button">导入 CSV 名单</button>
     <input id="csvInput" type="file" accept=".csv,text/csv,text/plain" hidden />
@@ -64,17 +62,17 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="js/namespace.js?v20261006b"></script>
-<script src="js/config.js?v20261006b"></script>
+<script src="js/config.js?v20261011b"></script>
 <script src="js/math.js?v20261006b"></script>
 <script src="data/roster.js?v20261011a"></script>
 <script src="js/participants.js?v20261006b"></script>
 <script src="js/track.js?v20261006b"></script>
-<script src="js/physics.js?v20261009c"></script>
+<script src="js/physics.js?v20261011b"></script>
 <script src="js/render.js?v20261009c"></script>
 <script src="js/results.js?v20261006b"></script>
 <script src="js/debug.js?v20261006b"></script>
-<script src="js/setup-ui.js?v20261011a"></script>
-<script src="js/app.js?v20261009f"></script>
+<script src="js/setup-ui.js?v20261011b"></script>
+<script src="js/app.js?v20261011b"></script>
 <script src="js/publish.js?v20261011a"></script>
 </body>
 </html>

@@ -87,7 +87,8 @@
       targetV = math.lerp(exitSpeed, c.baseSpeed * 0.55, slowdown);
     }
     else if (t >= c.startDelay) {
-      var pace = 1 + 0.12 * Math.sin(t * 0.37 + c.paceSeed) + 0.07 * Math.sin(t * 0.93 + c.paceSeed2) + 0.05 * Math.sin(t * 0.21 + c.paceSeed3);
+      // Independent surges and recoveries keep the front and midfield changing pace too.
+      var pace = 1 + 0.24 * Math.sin(t * 0.95 + c.paceSeed) + 0.16 * Math.sin(t * 1.8 + c.paceSeed2) + 0.08 * Math.sin(t * 0.43 + c.paceSeed3);
       if (c.rigged && config.RIG.paceDamp > 0) pace = 1 + (pace - 1) * (1 - config.RIG.paceDamp * math.clamp(c.s / raceLen, 0, 1));
       var rank = c.rank || 1, gap = Math.max(0, (Number.isFinite(race.leaderS) ? race.leaderS : c.s) - c.s);
       var gapBoost = math.clamp(gap / 900, 0, 1) * 0.45;

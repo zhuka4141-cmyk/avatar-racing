@@ -4,9 +4,8 @@ const { loadRuntime } = require('./qa/physics-runtime');
 
 const SEEDS = [1, 42, 9876, 2026, 31415, 2718, 8080, 9001];
 
-function makeRace(seed, riggedId) {
+function makeRace(seed, riggedId, count = 12) {
   const AvatarRace = loadRuntime();
-  const count = 12;
   const participants = Array.from({ length: count }, (_, i) => ({ id: i + 1, name: String(i + 1) }));
   const track = AvatarRace.track.buildTrack(seed, AvatarRace.track.gridPlan(count).depth);
   const race = AvatarRace.physics.createRaceState({ phase: 'racing', seed, track, participants, riggedId });
@@ -16,8 +15,8 @@ function makeRace(seed, riggedId) {
   return { AvatarRace, race, participants, track };
 }
 
-function run(seed, riggedId) {
-  const ctx = makeRace(seed, riggedId);
+function run(seed, riggedId, count = 12) {
+  const ctx = makeRace(seed, riggedId, count);
   const { AvatarRace, race } = ctx;
   const watched = riggedId == null ? null : race.cars.find(car => car.p.id === riggedId);
   const plan = AvatarRace.track.gridPlan(race.cars.length);
@@ -53,6 +52,11 @@ for (const seed of SEEDS) {
   assert.equal(result.race.phase, 'ending');
   assert.equal(result.race.results[0].id, 6, `seed ${seed} did not honor the rigged winner`);
   assert.equal(result.startRow, 0, `seed ${seed} rigged car did not start in the first row`);
+}
+
+for (const [count, seed] of [[6, 69], [15, 81]]) {
+  const result = run(seed, 6, count);
+  assert.equal(result.race.results[0].id, 6, `${count} cars, seed ${seed}: a late rival surge defeated the designated winner`);
 }
 
 const columns = new Set(SEEDS.map(seed => run(seed, 6).startCol));

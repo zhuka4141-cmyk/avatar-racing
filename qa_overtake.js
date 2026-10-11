@@ -11,7 +11,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     const page = await browser.newPage({ viewport:{ width:412, height:840 }, deviceScaleFactor:2 });
     page.on('pageerror', function(e){ errors.push(e.message); });
     await page.goto(URL);
-    await page.click('#sampleBtn');
+    for (let i = 0; i < 6; i++) await page.click('#addBtn');
     await page.evaluate(function(){ for (var i=0;i<4;i++) document.getElementById('addBtn').click(); });
     await page.click('#startBtn');
     await page.waitForTimeout(4300);

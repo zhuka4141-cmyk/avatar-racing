@@ -147,6 +147,16 @@ function boot(testMode = true) {
 }
 const click = (el) => el.dispatch('click');
 
+function addTestParticipants(document) {
+  for (const name of ['阿波罗', '闪电', '赤兔', '疾风', '雷霆', '星尘']) {
+    click(document.getElementById('addBtn'));
+    const cards = document.getElementById('list').children;
+    const input = findAll(cards[cards.length - 1], e => e.className === 'name-input')[0];
+    input.value = name;
+    input.dispatch('input');
+  }
+}
+
 function connectRepository(app, repository) {
   const { webcrypto } = require('node:crypto');
   app.ctx.TextEncoder = TextEncoder;
@@ -196,7 +206,7 @@ test('CSV 保存成功后，刷新带旧名单的页面再载入仍得到最新�
 
 test('最新名单读取失败时保留当前参赛者，并明确提示失败', async () => {
   const app = boot(false);
-  click(app.document.getElementById('sampleBtn'));
+  addTestParticipants(app.document);
   const names = app.participants().map(p => p.name);
   connectRepository(app, { readError: true });
   click(app.document.getElementById('rosterBtn'));
@@ -306,7 +316,7 @@ test('载入名单和清空后保留搜索，输入框及清除按钮与过滤�
   click(document.getElementById('clearBtn'));
   assert.equal(document.getElementById('searchBar').hidden, true);
   assert.equal(input.value, 'zzz__no_such_person__zzz');
-  click(document.getElementById('sampleBtn'));
+  addTestParticipants(document);
   assert.equal(visible().length, 0);
   assert.equal(count.textContent, '0 / 6');
   assert.equal(clear.hidden, false);
@@ -423,7 +433,7 @@ test('清空全部之后，内定状态不会残留到下一局', () => {
   click(document.getElementById('clearBtn'));
   assert.equal(participants().length, 0);
 
-  click(document.getElementById('sampleBtn'));       // 重新加入 6 位
+  addTestParticipants(document);       // 重新加入 6 位
   click(document.getElementById('startBtn'));
   assert.ok(race().cars.every(c => !c.rigged), '清空全部之后，新一局不应残留内定车');
   assert.ok(race().cars.length > 0);
@@ -434,7 +444,7 @@ test('端到端：内定的人从第一排发车，跑完整局后拿到第一',
   const boardEl = document.getElementById('board');
 
   click(document.getElementById('clearBtn'));
-  click(document.getElementById('sampleBtn'));                  // 加入 6 位示例参赛者
+  addTestParticipants(document);                  // 加入 6 位示例参赛者
   const P = participants();
   assert.equal(P.length, 6);
 
@@ -471,7 +481,7 @@ test('端到端：内定的人从第一排发车，跑完整局后拿到第一',
 test('不指定任何人时，比赛照常结束（内定未开启不应影响流程）', () => {
   const { document, race, pump } = boot();
   click(document.getElementById('clearBtn'));
-  click(document.getElementById('sampleBtn'));
+  addTestParticipants(document);
   click(document.getElementById('startBtn'));
   assert.ok(race().cars.every(c => !c.rigged), '没有内定时不应有车带内定标记');
   assert.ok(pump());
@@ -481,7 +491,7 @@ test('不指定任何人时，比赛照常结束（内定未开启不应影响�
 test('内定的人每局都从第一排出发，但位置会变（不会每次都停在同一格）', () => {
   const { document, participants, race } = boot();
   click(document.getElementById('clearBtn'));
-  click(document.getElementById('sampleBtn'));                 // 6 位 → 第一排 6 个格子
+  addTestParticipants(document);                 // 6 位 → 第一排 6 个格子
   const P = participants();
   const target = P[2];
   click(target.node.rigBtn);
@@ -569,7 +579,7 @@ test('清空全部之后搜索栏隐藏，重新加人后又能正常搜索', ()
   click(document.getElementById('clearBtn'));
   assert.ok(bar.hidden, '没有参赛者时搜索栏应隐藏');
 
-  click(document.getElementById('sampleBtn'));
+  addTestParticipants(document);
   assert.ok(!bar.hidden, '重新加人后搜索栏应回来');
   input.value = '疾风'; input.dispatch('input');
   const visible = participants().filter(p => !p.node.card.hidden);

@@ -11,7 +11,7 @@ function P(l,v){ console.log(l + ' ' + JSON.stringify(v)); }
     page.on('pageerror', function(e){ errors.push('pageerror: ' + e.message); });
     page.on('console', function(m){ if(m.type()==='error') errors.push('console: ' + m.text()); });
     await page.goto(URL);
-    await page.click('#sampleBtn');
+    for (let i = 0; i < 6; i++) await page.click('#addBtn');
     await page.evaluate(function(){ for (var i=0;i<4;i++) document.getElementById('addBtn').click(); });
     await page.click('#startBtn');
     let ok = false;

@@ -17,7 +17,7 @@ function state(page){ return page.evaluate(function(){ var api=window.__avatarRa
   await page.goto(URL);
   await page.click('#clearBtn');
   await page.click('#addBtn');
-  await page.click('#sampleBtn');
+  for (let i = 0; i < 6; i++) await page.click('#addBtn');
   const expectedCars = 7;
   const cards = await page.locator('.card').count();
   assert.equal(cards, expectedCars);

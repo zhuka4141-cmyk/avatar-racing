@@ -285,12 +285,6 @@
       reader.onerror = function () { toast('读不到这个文件'); };
       reader.readAsText(file, 'UTF-8');
     });
-    if (elements.sampleButton) elements.sampleButton.addEventListener('click', function () {
-      var names = ['阿波罗', '闪电', '赤兔', '疾风', '雷霆', '星尘'];
-      var added = 0;
-      for (var i = 0; i < names.length; i++) if (addParticipant(names[i])) added++;
-      if (added) toast('已添加 ' + added + ' 位示例参赛者，可点击头像上传自定义图片');
-    });
     if (elements.clearButton) elements.clearButton.addEventListener('click', function () {
       rosterRequest++;
       participants.clear(store);
