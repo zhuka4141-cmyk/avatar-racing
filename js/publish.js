@@ -12,15 +12,7 @@
   var UPLOAD_WORKERS = 10;
 
   function esc(value) {
-    var text = String(value == null ? '' : value).replace(/[\r\n]+/g, ' ');
-    var out = '"';
-    for (var i = 0; i < text.length; i++) {
-      var ch = text.charAt(i);
-      if (ch === '"') out += '\\"';
-      else if (ch === '\\') out += '\\\\';
-      else out += ch;
-    }
-    return out + '"';
+    return JSON.stringify(String(value == null ? '' : value).replace(/[\r\n]+/g, ' '));
   }
 
   function rosterText(rows) {
@@ -148,12 +140,13 @@
 
   function api(token, path, options) {
     var init = options || {};
+    init.cache = 'no-store';
     init.headers = {
-      Authorization: 'Bearer ' + token,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
       'Content-Type': 'application/json'
     };
+    if (token) init.headers.Authorization = 'Bearer ' + token;
     if (init.body && typeof init.body !== 'string') init.body = JSON.stringify(init.body);
     return fetch('https://api.github.com/repos/' + OWNER + '/' + REPO + path, init).then(function (response) {
       return response.text().then(function (text) {
@@ -164,6 +157,27 @@
         }
         return text ? JSON.parse(text) : {};
       });
+    });
+  }
+
+  function loadRoster() {
+    return api('', '/contents/' + ROSTER_PATH + '?ref=' + BRANCH + '&fresh=' + Date.now()).then(function (file) {
+      if (file.encoding !== 'base64' || typeof file.content !== 'string') throw new Error('仓库名单格式无效');
+      var binary = atob(file.content.replace(/\s/g, ''));
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      var source = new TextDecoder().decode(bytes);
+      var match = source.match(/\bAvatarRace\.roster\s*=\s*(\[[\s\S]*\])\s*;/);
+      if (!match) throw new Error('仓库名单格式无效');
+      // Older roster writers can leave literal control characters inside names.
+      var json = match[1].replace(/"(?:\\.|[^"\\])*"/g, function (value) {
+        return value.replace(/[\u0000-\u001f]/g, function (ch) { return JSON.stringify(ch).slice(1, -1); });
+      });
+      var roster = JSON.parse(json);
+      if (!Array.isArray(roster) || !roster.length || roster.some(function (pair) {
+        return !Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string' || typeof pair[1] !== 'string' || !USER_RE.test(pair[1]);
+      })) throw new Error('仓库名单格式无效');
+      return roster;
     });
   }
 
@@ -285,6 +299,7 @@
     fetchAvatar: fetchAvatar,
     gitBlobSha: gitBlobSha,
     publish: publish,
+    loadRoster: loadRoster,
     owner: OWNER,
     repo: REPO,
     branch: BRANCH,

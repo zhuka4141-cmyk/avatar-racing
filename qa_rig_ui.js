@@ -108,16 +108,19 @@ function boot(testMode = true) {
   const ctx = vm.createContext({
     document, window: { document, location: { search: testMode ? '?test=1' : '' }, devicePixelRatio: 1, addEventListener() {} },
     requestAnimationFrame: fn => { rafQueue.push(fn); return rafQueue.length; },
+    performance: { now: () => vnow },
     setTimeout: () => 0, clearTimeout() {},
     URL: { createObjectURL: () => 'blob:stub', revokeObjectURL() {} },
     FileReader: class { readAsText() {} },
     Image: class extends El { constructor() { super('img'); } },
+    Math: Object.create(Math),
     console: Object.assign({}, console, { error: (...args) => errors.push(args) })
   });
   for (const relativePath of scripts) {
-    const filename = path.join(__dirname, relativePath);
+    const filename = path.join(__dirname, relativePath.split('?')[0]);
     vm.runInContext(fs.readFileSync(filename, 'utf8'), ctx, { filename });
   }
+  ctx.Math.random = ctx.window.AvatarRace.math.mulberry32(42);
 
   const participants = () => {
     const cards = document.getElementById('list').children;
@@ -143,6 +146,122 @@ function boot(testMode = true) {
   return { ctx, document, participants, race, marked, pump, errors };
 }
 const click = (el) => el.dispatch('click');
+
+function connectRepository(app, repository) {
+  const { webcrypto } = require('node:crypto');
+  app.ctx.TextEncoder = TextEncoder;
+  app.ctx.TextDecoder = TextDecoder;
+  app.ctx.crypto = webcrypto;
+  app.ctx.btoa = value => Buffer.from(value, 'binary').toString('base64');
+  app.ctx.atob = value => Buffer.from(value, 'base64').toString('binary');
+  app.ctx.window.location.protocol = 'https:';
+  app.ctx.window.localStorage = { getItem: () => '{}', setItem() {} };
+  app.ctx.fetch = async (url, options = {}) => {
+    let body;
+    if (url.includes('/contents/data/roster.js')) {
+      if (repository.readError) return { ok: false, status: 503, text: async () => 'Unavailable' };
+      body = { type: 'file', encoding: 'base64', content: Buffer.from(repository.source).toString('base64') };
+    } else if (url.includes('/git/ref/heads/')) body = { object: { sha: 'base' } };
+    else if (url.includes('/git/commits/base')) body = { tree: { sha: 'tree' } };
+    else if (url.includes('/git/trees/tree')) body = { tree: [] };
+    else if (url.endsWith('/git/blobs')) {
+      repository.pending = Buffer.from(JSON.parse(options.body).content, 'base64').toString('utf8');
+      body = { sha: 'roster-blob' };
+    } else if (url.endsWith('/git/trees')) body = { sha: 'new-tree' };
+    else if (url.endsWith('/git/commits')) body = { sha: 'new-commit' };
+    else if (url.includes('/git/refs/heads/')) { repository.source = repository.pending; body = { object: { sha: 'new-commit' } }; }
+    else if (url.startsWith('avatars/')) return { ok: false, status: 404 };
+    else throw new Error('Unexpected repository request: ' + url);
+    return { ok: true, text: async () => JSON.stringify(body) };
+  };
+}
+
+test('CSV 保存成功后，刷新带旧名单的页面再载入仍得到最新人数与姓名', async () => {
+  const saving = boot(false);
+  const csv = 'Fullname,Username,Avatar URL\n' + Array.from({ length: 248 }, (_, i) => '粉丝💗 ' + i + ',fan_' + i + ',').join('\n');
+  const rows = saving.ctx.window.AvatarRace.publish.parseRows(csv);
+  const repository = {};
+  connectRepository(saving, repository);
+  await saving.ctx.window.AvatarRace.publish.publish('test', rows);
+  const refreshed = boot(false);
+  refreshed.ctx.window.AvatarRace.roster = Array.from({ length: 244 }, (_, i) => ['旧姓名 ' + i, 'fan_' + i]);
+  connectRepository(refreshed, repository);
+  click(refreshed.document.getElementById('rosterBtn'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(refreshed.participants().length, 248, '不能重新载入浏览器缓存中的244人旧名单');
+  assert.equal(refreshed.participants()[247].name, '粉丝💗 247');
+  assert.equal(refreshed.document.getElementById('countBadge').textContent, '共 248 位参赛者');
+  assert.equal(refreshed.document.getElementById('rosterBtn').disabled, false);
+});
+
+test('最新名单读取失败时保留当前参赛者，并明确提示失败', async () => {
+  const app = boot(false);
+  click(app.document.getElementById('sampleBtn'));
+  const names = app.participants().map(p => p.name);
+  connectRepository(app, { readError: true });
+  click(app.document.getElementById('rosterBtn'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(app.participants().map(p => p.name), names);
+  assert.match(app.document.getElementById('toast').textContent, /最新名单.*失败/);
+  assert.equal(app.document.getElementById('rosterBtn').disabled, false);
+});
+
+test('姓名中的制表符保存后可以重新载入', async () => {
+  const app = boot(false);
+  const repository = {};
+  connectRepository(app, repository);
+  const rows = app.ctx.window.AvatarRace.publish.parseRows('Fullname,Username,Avatar URL\n"Fan\tName",fan,');
+  await app.ctx.window.AvatarRace.publish.publish('test', rows);
+  const loaded = await app.ctx.window.AvatarRace.publish.loadRoster();
+  assert.equal(loaded[0][0], 'Fan\tName');
+});
+
+for (const start of [false, true]) {
+  test('等待名单期间导入CSV' + (start ? '并开始比赛' : '') + '，迟到的请求不会覆盖参赛者', async () => {
+    const app = boot(false);
+    connectRepository(app, { source: 'window.AvatarRace.roster = [["Repository fan", "repo_fan"]];' });
+    const fetch = app.ctx.fetch;
+    let release;
+    app.ctx.fetch = url => new Promise(resolve => { release = () => resolve(fetch(url)); });
+    click(app.document.getElementById('rosterBtn'));
+    app.ctx.FileReader = class {
+      readAsText() {
+        this.result = 'Fullname,Username,Avatar URL\nNew Alice,new_alice,\nNew Bob,new_bob,';
+        this.onload();
+      }
+    };
+    const input = app.document.getElementById('csvInput');
+    input.files = [{}];
+    input.dispatch('change');
+    if (start) click(app.document.getElementById('startBtn'));
+    release();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(Array.from(app.participants(), p => p.name), ['New Alice', 'New Bob']);
+    if (start) assert.equal(app.race().cars.length, app.participants().length);
+    assert.equal(app.document.getElementById('rosterBtn').disabled, false);
+  });
+}
+
+test('等待名单期间开始比赛，迟到的请求不会改变比赛参赛者', async () => {
+  const app = boot(false);
+  connectRepository(app, { source: 'window.AvatarRace.roster = [["Repository fan", "repo_fan"]];' });
+  const fetch = app.ctx.fetch;
+  let release;
+  app.ctx.fetch = url => new Promise(resolve => { release = () => resolve(fetch(url)); });
+  click(app.document.getElementById('rosterBtn'));
+  click(app.document.getElementById('startBtn'));
+  release();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.participants().length, 2);
+  assert.equal(app.race().cars.length, 2);
+});
+
+test('已有工具生成的名单含制表符时仍可安全读取', async () => {
+  const app = boot(false);
+  connectRepository(app, { source: 'window.AvatarRace.roster = [["Legacy\tName", "legacy_fan"]];' });
+  const loaded = await app.ctx.window.AvatarRace.publish.loadRoster();
+  assert.equal(loaded[0][0], 'Legacy\tName');
+});
 
 // ---------------- 测试 ----------------
 
