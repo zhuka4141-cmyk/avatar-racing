@@ -1,6 +1,9 @@
 (function (global) {
   global.AvatarRace = global.AvatarRace || {};
   global.AvatarRace.roster = [
+  ["yan_.z0", "yan_.z0"],
+  ["Max Hamilton", "totyrifle28"],
+  ["°[◇《✩Rīshāv hāzrā✰》◇]°", "the._.black._.eagle"],
   ["Rex Yu", "rex.laam"],
   ["Water", "waterxrn"],
   ["Mehmet ali", "mhmt_al03"],
