@@ -1,6 +1,20 @@
 (function (global) {
   global.AvatarRace = global.AvatarRace || {};
   global.AvatarRace.roster = [
+  ["Rex Yu", "rex.laam"],
+  ["Water", "waterxrn"],
+  ["Mehmet ali", "mhmt_al03"],
+  ["Beniste", "ismailisteabi"],
+  ["Tprk", "tprk_3"],
+  ["sylvester noten", "sylvesternoten"],
+  ["Mango", "nguyendnam2609"],
+  ["JustCalmmnga", "dihm.33"],
+  ["L.Bermu", "leobp210"],
+  ["Hayden c h", "haydos932"],
+  ["Lisa", "mysecret_acc_"],
+  ["𝙋𝙡𝙪𝙚𝙢", "pluem_1323"],
+  ["Jayce Johnstun", "jayce_johnstun"],
+  ["FUNG", "fung.chf3_9"],
   ["白告", "nacl._.108_"],
   ["#Kendajumoto", "oliver.marecek"],
   ["🎱", "tergel.0321"],
@@ -263,7 +277,6 @@
   ["Toilet", "wallace__0823"],
   ["-𝐑𝐨𝐬𝐞-", "rare._.roseeeeee"],
   ["🫥💤", "moses_0326"],
-  ["🐷", "oliv.ertime"],
-  ["🌧️", "briisannn"]
+  ["🐷", "oliv.ertime"]
 ];
 })(window);
