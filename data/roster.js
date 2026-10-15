@@ -1,11 +1,18 @@
 (function (global) {
   global.AvatarRace = global.AvatarRace || {};
   global.AvatarRace.roster = [
-  ["yan_.z0", "yan_.z0"],
+  ["遲晒大到bot.", "purplelammmm_"],
+  ["Invincible", "invincible95280"],
+  ["M.D", "m.d1kk"],
+  ["Revelscum66", "revelscum66"],
+  ["黑妹👧🏿", "ashleychow4"],
+  ["rlang sucipto", "sucipto.rlang"],
+  ["Yanice", "yanice__0123"],
+  ["Klaas Kirstein", "klaaskirstein"],
+  ["K", "yan_.z0"],
   ["Max Hamilton", "totyrifle28"],
   ["°[◇《✩Rīshāv hāzrā✰》◇]°", "the._.black._.eagle"],
   ["Rex Yu", "rex.laam"],
-  ["Water", "waterxrn"],
   ["Mehmet ali", "mhmt_al03"],
   ["Beniste", "ismailisteabi"],
   ["Tprk", "tprk_3"],
@@ -33,7 +40,6 @@
   ["Chris", "chri_s0013"],
   ["DNZJKK", "dnzj13"],
   ["⚽️⚡️✨️ 11 سيد عاهِل", "procooldrifter_7676"],
-  ["𝓡𝓒", "rc_t_y"],
   ["Shiny toe.", "shytoe.829"],
   ["Gustavo Xavier Carciofi", "guto.bikes"],
   ["Owen", "owen75514"],
@@ -48,7 +54,6 @@
   ["Hailey Chan", "hchan515"],
   ["Ethan Valdez", "bigbackethan"],
   ["Toto👍🏀🇦🇷", "tomasactis__"],
-  ["Addeson Haydu", "addeson_haydu_racing"],
   ["i dk", "i674551"],
   ["Luca crisan edan", "lucacrisanedan85"],
   ["beedog_fkc", "beedog_fkc"],
@@ -94,17 +99,14 @@
   ["🎧ིྀ", "_tung.e"],
   ["張啟宏", "zhangqihong16"],
   ["azy clona cartão", "okkotsu_msx"],
-  ["Dakshinho", "daksh.inho"],
   ["ᑕɦคɨ ᒚɨи ᕼεиɠ_⁰¹¹¹", "jinheng.cantdyno"],
   ["🙂☕", "mainas_29"],
   ["Ras", "rasmuskenzie"],
-  ["Daniel Aleni Khanbekyan- Դանիել Ալենի Խանբեկյան", "danikhanbek66"],
   ["Šotouš_z_Prahy", "yt_leonmarek298"],
   ["TheoNog", "theo.nog28"],
   ["icey", "icey12345650"],
   ["Aymen fethi", "aymenfethi1217"],
   ["Aarjav.", "4arjav.424"],
-  ["mattia Rolando", "matti.privato14"],
   ["ViHaAn👑", "ya.its__vihaan"],
   ["Kavisri Sai", "kavisri_sai"],
   ["Yunnåri", "yunnariis"],
@@ -280,6 +282,7 @@
   ["Toilet", "wallace__0823"],
   ["-𝐑𝐨𝐬𝐞-", "rare._.roseeeeee"],
   ["🫥💤", "moses_0326"],
-  ["🐷", "oliv.ertime"]
+  ["🐷", "oliv.ertime"],
+  ["🌧️", "briisannn"]
 ];
 })(window);
